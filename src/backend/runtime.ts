@@ -9,6 +9,8 @@ import { modelSchema, type ModelInfo, type SessionBinding } from '../core/contra
 import { RpcClient, RpcError, type RpcNotification } from './rpc'
 import { TurnAlreadyEndedError, type LifeHistoryTurn } from '../core/life-harness'
 import { TerminalRelay } from './terminal-relay'
+import { conversationTurnSchema, type ConversationTurn } from '../shared/conversation'
+import { matchMemories, type MemoryMatchInput, type MemoryMatchProgress } from './memory-matcher'
 
 export interface RuntimeTool { type: 'function'; name: string; description: string; inputSchema: unknown }
 export const toolCallSchema = z.object({ threadId: z.string(), turnId: z.string(), callId: z.string(), namespace: z.string().nullable(), tool: z.string(), arguments: z.unknown() })
@@ -19,6 +21,7 @@ const completedTurnSchema = z.object({ threadId: z.string(), turn: z.object({ id
 
 export interface RuntimeAccount { authenticated: boolean; mode: 'chatgpt' | 'apiKey' | null }
 export interface AgentRuntime {
+  matchMemories?(input: MemoryMatchInput, signal: AbortSignal, progress: (value: MemoryMatchProgress) => Promise<void>): Promise<string[]>
   setToolHandler(handler: (call: RuntimeToolCall) => Promise<RuntimeToolResult>): void
   onNotification(listener: (event: RpcNotification) => void): () => void
   connect(mode: 'chatgpt' | 'apiKey'): Promise<void>
@@ -34,6 +37,7 @@ export interface AgentRuntime {
   steer(threadId: string, turnId: string, text: string, clientUserMessageId?: string): Promise<void>
   compact(threadId: string): Promise<void>
   history(threadId: string): Promise<LifeHistoryTurn[]>
+  conversation(threadId: string): Promise<ConversationTurn[]>
   interrupt(threadId: string, turnId: string): Promise<void>
   inspect(threadId: string): Promise<'idle' | 'active' | 'error'>
   turn(threadId: string, turnId: string): Promise<{ status: string; error?: string } | null>
@@ -56,6 +60,10 @@ export async function findCodexExecutable(): Promise<string> {
 }
 
 export class CodexRuntime implements AgentRuntime {
+  matchMemories(input: MemoryMatchInput, signal: AbortSignal, progress: (value: MemoryMatchProgress) => Promise<void>): Promise<string[]> {
+    this.client()
+    return matchMemories(this.endpoint, this.token, input, signal, progress)
+  }
   private readonly listeners = new Set<(event: RpcNotification) => void>()
   private process: ChildProcess | null = null
   private rpc: RpcClient | null = null
@@ -229,6 +237,10 @@ export class CodexRuntime implements AgentRuntime {
   async history(threadId: string): Promise<LifeHistoryTurn[]> {
     const result = z.object({ thread: z.object({ turns: z.array(z.object({ id: z.string(), status: z.string(), items: z.array(z.object({ type: z.string(), clientId: z.string().nullable().optional() }).passthrough()), itemsView: z.unknown().optional() })) }) }).parse(await this.client().request('thread/read', { threadId, includeTurns: true }))
     return result.thread.turns.map(turn => ({ id: turn.id, status: turn.status, clientIds: turn.items.filter(i => i.type === 'userMessage' && i.clientId).map(i => i.clientId!), compact: turn.items.some(i => i.type === 'contextCompaction') }))
+  }
+  async conversation(threadId: string): Promise<ConversationTurn[]> {
+    const result = z.object({ thread: z.object({ turns: z.array(conversationTurnSchema) }) }).parse(await this.client().request('thread/read', { threadId, includeTurns: true }))
+    return result.thread.turns
   }
   async inspect(threadId: string): Promise<'idle' | 'active' | 'error'> {
     const result = z.object({ thread: z.object({ status: z.object({ type: z.string() }) }) }).parse(await this.client().request('thread/read', { threadId }))

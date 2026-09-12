@@ -18,6 +18,7 @@ class Runtime implements AgentRuntime {
   listener: (event: RpcNotification) => void = () => undefined
   created: string[] = []
   instructions: string[] = []
+  resumed: { agentId: string; threadId: string | null; instructions?: string }[] = []
   inputs: string[] = []
   failCreation = false
   mode: 'chatgpt' | 'apiKey' = 'chatgpt'
@@ -31,7 +32,10 @@ class Runtime implements AgentRuntime {
   async cancelLogin() {}
   async create(binding: SessionBinding, instructions: string) { this.created.push(binding.agentId); this.instructions.push(instructions); if (this.failCreation) throw new Error('thread/start response lost'); return `thread-${binding.agentId}` }
   async seed(_binding: SessionBinding, text: string) { this.inputs.push(text) }
-  async resume(_binding: SessionBinding, instructions?: string) { if (instructions !== undefined) this.instructions.push(instructions) }
+  async resume(binding: SessionBinding, instructions?: string) {
+    this.resumed.push({ agentId: binding.agentId, threadId: binding.threadId, instructions })
+    if (instructions !== undefined) this.instructions.push(instructions)
+  }
   async startTurn(binding: SessionBinding, text: string, _images?: string[], clientId?: string) {
     this.inputs.push(text)
     const id = `turn-${crypto.randomUUID()}`
@@ -54,6 +58,7 @@ class Runtime implements AgentRuntime {
   async steer() {}
   async compact() {}
   async history(threadId: string) { return this.historyTurns.get(threadId) ?? [] }
+  async conversation(_threadId: string): Promise<import('../../src/shared/conversation').ConversationTurn[]> { return [] }
   async interrupt() {}
   async inspect() { return 'idle' as const }
   async turn() { return null }
@@ -112,6 +117,29 @@ async function review(engine: BackendEngine, runtime: Runtime, configuration = s
 }
 
 describe('Preparation harness', () => {
+  it.each([false, true])('refreshes existing life NPC prompts without replacing their conversations (memory=%s)', async memory => {
+    const { engine, runtime, root } = await setup(undefined, memory)
+    await review(engine, runtime)
+    await engine.backendCommand({ type: 'approve', revision: 1 })
+    await complete(engine, runtime, population)
+    const sessions = engine.backendStatus().preparation.sessions
+    await engine.close(); engines.delete(engine)
+    const restored = await setup(root, memory)
+    expect(restored.engine.backendStatus().preparation.sessions).toEqual(sessions)
+    expect(restored.runtime.created).toEqual([])
+    for (const session of sessions) {
+      const resumed = restored.runtime.resumed.find(item => item.agentId === session.agentId)!
+      expect(resumed.threadId).toBe(session.threadId)
+      if (session.role === 'npc') {
+        expect(session.memoryVersion).toBe(memory ? 1 : undefined)
+        expect(resumed.instructions?.includes('consolidateMemory')).toBe(memory)
+        expect(resumed.instructions).toContain('【心の声】')
+        expect(resumed.instructions).toContain('【独り言】')
+        expect(resumed.instructions).toContain('ユーザーだけに表示され、他のNPCへは届きません')
+      } else if (session.role === 'facility') expect(resumed.instructions).toBeUndefined()
+    }
+    expect(restored.engine.snapshot().state.simulation).toMatchObject({ turn: 0, stage: 'ready' })
+  })
   it('flushes initialization completion and the turn limit without waiting for the autosave interval', async () => {
     const { engine, runtime } = await setup(undefined, true)
     await review(engine, runtime, settings, { ...draft, specification: { ...draft.specification, simulation: { ...draft.specification.simulation, maxTurns: 1 } } })

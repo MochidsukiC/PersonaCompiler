@@ -1,15 +1,18 @@
 import { useLayoutEffect, useRef, useState } from 'react'
 import { Terminal } from '@xterm/xterm'
 import { FitAddon } from '@xterm/addon-fit'
-import { Square, TerminalSquare } from 'lucide-react'
+import { MessageCircle, Square, TerminalSquare } from 'lucide-react'
 import type { AgentDescriptor, TerminalChunk } from '../../shared/contracts'
 import { roleLabels } from './labels'
+import { MessageView } from './MessageView'
+import { MemoryPanel } from './MemoryPanel'
 
-export function TerminalPane({ agent, real = false, connected = true, onError }: { agent: AgentDescriptor; real?: boolean; connected?: boolean; onError: (message: string) => void }) {
+export function TerminalPane({ agent, real = false, connected = true, memoryEnabled = false, onError }: { agent: AgentDescriptor; real?: boolean; connected?: boolean; memoryEnabled?: boolean; onError: (message: string) => void }) {
   const container = useRef<HTMLDivElement>(null)
   const [ready, setReady] = useState(false)
   const [reconnecting, setReconnecting] = useState(false)
   const [generation, setGeneration] = useState(0)
+  const [view, setView] = useState<'codex' | 'messages' | 'memory'>('codex')
   const reconnect = async () => {
     setReconnecting(true)
     try { await window.persona.backendCommand({ type: 'terminalReconnect', sessionId: agent.sessionId }); setGeneration(value => value + 1) }
@@ -55,7 +58,7 @@ export function TerminalPane({ agent, real = false, connected = true, onError }:
       else pending.push(event.chunk)
     })
     const fitTerminal = () => {
-      if (!initialized || disposed) return
+      if (!initialized || disposed || container.current?.hidden) return
       const dimensions = fit.proposeDimensions()
       if (!dimensions || dimensions.cols < 2 || dimensions.rows < 1) return
       const cols = Math.min(500, dimensions.cols)
@@ -96,7 +99,11 @@ export function TerminalPane({ agent, real = false, connected = true, onError }:
   return <section className="terminal-panel" aria-label={`${agent.name}の端末`}>
     <div className="pane-heading"><span><TerminalSquare size={15} /> SESSION <span className="muted">/ {agent.id}</span></span><span className="demo-tag">{real ? agent.role === 'parent' ? 'CODEX CLI · 代理承認' : 'CODEX CLI' : 'DEMO'}</span></div>
     <div className="terminal-person"><span className="avatar" style={{ '--agent-color': agent.color } as React.CSSProperties}>{agent.name.slice(-1)}</span><div><strong>{agent.name}</strong><small>{roleLabels[agent.role]} <span>• {!connected ? 'Codexへの接続待ち' : agent.status === 'ended' ? '端末終了・会話は保存済み' : agent.status === 'interrupted' ? '中断中' : agent.status === 'idle' ? '入力待ち' : '接続中'}</span></small></div>{real && <button className="button compact" disabled={!connected || reconnecting || agent.status !== 'ended'} onClick={() => void reconnect()}>{reconnecting ? '再接続中…' : '再接続'}</button>}<button className="icon-button interrupt" disabled={!connected || agent.status === 'ended'} title="処理に割り込む（Sessionは保持）" aria-label="処理に割り込む" onClick={() => void window.persona.terminalInterrupt(agent.sessionId).catch(onError)}><Square size={13} /></button></div>
-    <div className="terminal-host" ref={container} data-testid="terminal" data-ready={ready} />
-    <div className="terminal-footer"><span className="status-dot" /> 選択中のCtrl+Cはコピー／未選択は割り込み<span>UTF-8</span></div>
+    {agent.role === 'npc' && <div className="chat-view-switch" role="group" aria-label="チャット表示"><button aria-pressed={view === 'codex'} onClick={() => setView('codex')}><TerminalSquare size={14} />Codex</button><button aria-pressed={view === 'messages'} onClick={() => setView('messages')}><MessageCircle size={14} />メッセージ</button></div>}
+    <div className="terminal-host" hidden={view !== 'codex'} ref={container} data-testid="terminal" data-ready={ready} />
+    {agent.role === 'npc' && memoryEnabled && <button className="button compact" onClick={() => setView('memory')} aria-pressed={view === 'memory'}>記憶・未来の意図</button>}
+    {view === 'memory' && <MemoryPanel key={agent.id} agentId={agent.id} />}
+    <div className="terminal-footer" hidden={view !== 'codex'}><span className="status-dot" /> 選択中のCtrl+Cはコピー／未選択は割り込み<span>UTF-8</span></div>
+    {view === 'messages' && (real ? <MessageView agent={agent} connected={connected} /> : <div className="message-view"><p className="message-empty">メッセージ履歴は実Codex接続時に利用できます。</p></div>)}
   </section>
 }

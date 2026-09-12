@@ -114,7 +114,7 @@ export default function App() {
         <div className="world-footer"><span><span className="status-dot" />{npcs.length} 人の住民</span><span>{state.map?.locations.length ?? 0} 施設</span><span>{state.relationships?.relations.length ?? 0} 関係</span><span className="footer-right">{state.map ? '人物をクリックして端末を開く' : 'まずは世界の準備から'}</span></div>
       </section>
       <div className="resize-handle" role="separator" aria-label="端末幅" aria-orientation="vertical" onPointerDown={event => beginResize(event, 'right')} />
-      {agent ? <TerminalPane key={`${runId}:${agent.sessionId}`} agent={agent} real={!!workspace.backend} connected={!readOnly && (!workspace.backend || (workspace.backend.connection === 'connected' && workspace.backend.authenticated))} onError={report} /> : <div className="terminal-empty"><Layers3 size={24} /><strong>端末を選択してください</strong><p>地図やエージェント一覧から開けます。<br />非表示のSessionも継続しています。</p></div>}
+      {agent ? <TerminalPane key={`${runId}:${agent.sessionId}`} agent={agent} real={!!workspace.backend} memoryEnabled={workspace.backend?.preparation.sessions.some(s => s.agentId === agent.id && s.memoryVersion === 1)} connected={!readOnly && (!workspace.backend || (workspace.backend.connection === 'connected' && workspace.backend.authenticated))} onError={report} /> : <div className="terminal-empty"><Layers3 size={24} /><strong>端末を選択してください</strong><p>地図やエージェント一覧から開けます。<br />非表示のSessionも継続しています。</p></div>}
       <nav className="vertical-tabs" aria-label="端末タブ">{tabs.map(id => {
         const person = state.agents.find(item => item.id === id)
         if (!person) return null

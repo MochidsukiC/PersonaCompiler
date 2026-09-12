@@ -157,6 +157,7 @@ export class Workspace {
         const staleRelations: string[] = []
         for (const relation of state.relationships?.relations ?? []) {
           for (const evidence of relation.evidence) {
+            if (!('path' in evidence)) continue
             let changed: boolean
             try { changed = digest(await this.read(evidence.path)) !== evidence.hash }
             catch (error) {

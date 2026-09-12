@@ -4,12 +4,14 @@ import path from 'node:path'
 import { z } from 'zod'
 import { publishFile } from '../main/atomic-write'
 import { lifeCheckpointSchema } from '../core/life-harness'
+import { memoryArchiveSchema, type MemoryArchive } from '../core/memory-contracts'
 import type { LifeHistoryRecord, LoadedMemoryRun, PersistenceChange, SaveManifest, SaveReceipt, SavedMemoryRun } from '../core/persistence'
 
 const hash = (text: string) => createHash('sha256').update(text).digest('hex')
 const segmentSchema = z.object({ file: z.string().regex(/^history\/\d+-\d+-[a-f0-9]{64}\.jsonl$/), hash: z.string().regex(/^[a-f0-9]{64}$/), first: z.number().int().positive(), last: z.number().int().positive() })
 export const manifestSchema = z.object({ version: z.literal(2), runId: z.string(), revision: z.number().int().nonnegative(), generation: z.number().int().positive(), slot: z.enum(['a', 'b']), hash: z.string(), dirty: z.boolean(), savedAt: z.string(), segments: z.array(segmentSchema) })
 const historySchema = z.discriminatedUnion('kind', [
+  ...memoryArchiveSchema.options,
   z.object({ kind: z.literal('job'), value: lifeCheckpointSchema.shape.jobs.element }),
   z.object({ kind: z.literal('receipt'), key: z.string(), value: lifeCheckpointSchema.shape.receipts.valueType }),
   z.object({ kind: z.literal('event'), value: lifeCheckpointSchema.shape.world.shape.events.element }),
@@ -38,6 +40,7 @@ export class PersistenceStore {
     const saved = decoded as SavedMemoryRun
     if (saved.life) saved.life = lifeCheckpointSchema.parse(saved.life)
     const receipts: NonNullable<SavedMemoryRun['life']>['receipts'] = {}
+    const memoryArchive: MemoryArchive[] = []
     const events: NonNullable<SavedMemoryRun['life']>['world']['events'] = []
     const completedJobKinds: NonNullable<NonNullable<SavedMemoryRun['life']>['completedJobKinds']> = {}
     let previous = 0
@@ -50,6 +53,7 @@ export class PersistenceStore {
       for (const entry of entries) {
         if (entry.revision <= previous) throw new Error(`履歴が重複しています: ${segment.file}/${entry.revision}`)
         for (const record of entry.records) {
+          if (record.kind === 'memorySource' || record.kind === 'memoryRecord' || record.kind === 'memoryRecall') memoryArchive.push(record)
           if (record.kind === 'receipt') receipts[record.key] = record.value
           if (record.kind === 'job' && ['done', 'discarded'].includes(record.value.status)) completedJobKinds[record.value.id] = record.value.kind
           if (record.kind === 'event') { events.push(record.value); if (events.length > 200) events.shift() }
@@ -60,6 +64,7 @@ export class PersistenceStore {
     }
     this.run = structuredClone(saved); this.revision = manifest.revision; this.manifest = manifest
     if (saved.life) { saved.life.receipts = receipts; saved.life.world.events = events; saved.life.completedJobKinds = completedJobKinds }
+    if (saved.life?.cognition) saved.life.memoryArchive = memoryArchive
     return { manifest, run: saved }
   }
   apply(change: PersistenceChange): void {

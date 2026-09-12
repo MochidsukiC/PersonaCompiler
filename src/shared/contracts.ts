@@ -1,6 +1,8 @@
 import { z } from 'zod'
 import type { BackendCommand, BackendSnapshot } from '../core/contracts'
 import { simulationSchema } from '../core/life-contracts'
+import type { ConversationTurn } from './conversation'
+import type { MemoryDetail, MemoryInspection } from '../core/memory-contracts'
 
 const point = z.object({ x: z.number().finite(), y: z.number().finite() })
 export const agentSchema = z.object({
@@ -24,7 +26,8 @@ export const relationshipSchema = z.object({
   observedAt: z.string(), observedTurn: z.number().int(), day: z.number().int(),
   relations: z.array(z.object({
     id: z.string(), source: z.string(), target: z.string(), label: z.string(), description: z.string(),
-    evidence: z.array(z.object({ path: z.string(), hash: z.string() }))
+    observedTurn: z.number().int().nonnegative().optional(),
+    evidence: z.array(z.union([z.object({ path: z.string(), hash: z.string() }), z.object({ memoryId: z.string(), revision: z.number().int().positive(), ownerId: z.string() })]))
   }))
 })
 export const stateSchema = z.object({
@@ -67,6 +70,8 @@ export type ImageInput = PreparationInput['images'][number]
 export type AppEvent = { type: 'workspace'; snapshot: WorkspaceSnapshot } | { type: 'terminal'; chunk: TerminalChunk } | { type: 'error'; message: string }
 
 export interface DesktopApi {
+  memoryInspection(agentId: string): Promise<MemoryInspection>
+  memoryDetail(agentId: string, memoryId: string, revision: number): Promise<MemoryDetail>
   backendStatus(): Promise<BackendSnapshot>
   backendCommand(command: BackendCommand): Promise<BackendSnapshot>
   snapshot(): Promise<WorkspaceSnapshot>
@@ -80,6 +85,7 @@ export interface DesktopApi {
   openExternal(path: string): Promise<void>
   reveal(path: string): Promise<void>
   terminalSnapshot(sessionId: string): Promise<TerminalSnapshot>
+  conversation(sessionId: string): Promise<ConversationTurn[]>
   terminalInput(sessionId: string, data: string): Promise<void>
   terminalResize(sessionId: string, columns: number, rows: number): Promise<void>
   terminalInterrupt(sessionId: string): Promise<void>

@@ -17,7 +17,7 @@ import { validateLifeSpecification } from '../core/spatial'
 import { PersistenceCoordinator } from './persistence-coordinator'
 import type { PersistencePortFactory } from '../core/persistence'
 
-const persistedSchema = z.object({ version: z.literal(1), lifeVersion: z.literal(1).optional(), authMode: z.enum(['chatgpt', 'apiKey']).nullable(), settings: agentModelSettingsSchema.nullable(), preparation: preparationProgressSchema, artifactHash: z.string().nullable() })
+const persistedSchema = z.object({ version: z.literal(1), lifeVersion: z.literal(1).optional(), memoryVersion: z.literal(1).optional(), authMode: z.enum(['chatgpt', 'apiKey']).nullable(), settings: agentModelSettingsSchema.nullable(), preparation: preparationProgressSchema, artifactHash: z.string().nullable() })
 const turnEventSchema = z.object({ threadId: z.string(), turn: z.object({ id: z.string(), status: z.string().optional(), error: z.object({ message: z.string() }).passthrough().nullable().optional() }).passthrough() })
 const errorMessage = (error: unknown) => messageOf(error)
 const newId = () => randomUUID()
@@ -37,6 +37,7 @@ export class BackendEngine {
   private stopRequested = false
   private artifactHash: string | null = null
   private lifeVersion: 1 | undefined = 1
+  private memoryVersion: 1 | undefined
   private life: LifeHarness | null = null
   private lastLifeStage: import('../core/life-contracts').SimulationSnapshot['stage'] | undefined
   private world: RunState = initialState('initializing')
@@ -75,7 +76,7 @@ export class BackendEngine {
   }
   private async persist(): Promise<void> {
     if (this.persistence) {
-      if (!this.persistence.status.readOnlyReason) this.persistence.setMetadata({ version: 1, lifeVersion: this.lifeVersion, authMode: this.view.authMode, settings: this.view.settings, preparation: this.view.preparation, artifactHash: this.artifactHash })
+      if (!this.persistence.status.readOnlyReason) this.persistence.setMetadata({ version: 1, lifeVersion: this.lifeVersion, memoryVersion: this.memoryVersion, authMode: this.view.authMode, settings: this.view.settings, preparation: this.view.preparation, artifactHash: this.artifactHash })
       this.publish(); return
     }
     await this.workspace.write('backend.json', JSON.stringify({ version: 1, lifeVersion: this.lifeVersion, authMode: this.view.authMode, settings: this.view.settings, preparation: this.view.preparation, artifactHash: this.artifactHash }, null, 2))
@@ -120,6 +121,7 @@ export class BackendEngine {
         if (!loaded) throw new Error('新形式の確定保存がありません')
         const saved = persistedSchema.parse(loaded.run.metadata)
         this.world = initialState(runId); this.lifeVersion = saved.lifeVersion
+        this.memoryVersion = saved.memoryVersion
         this.view.authMode = saved.authMode; this.view.settings = saved.settings; this.view.preparation = saved.preparation; this.artifactHash = saved.artifactHash
         this.view.preparation.busy = false; this.view.preparation.paused = !['idle', 'ready'].includes(saved.preparation.phase)
         this.workspace = new Workspace(root, this.world, () => this.publish(), true)
@@ -132,6 +134,7 @@ export class BackendEngine {
       const world = stateSchema.parse(JSON.parse(await readFile(path.join(root, 'state.json'), 'utf8')))
       this.world = world
       this.lifeVersion = saved.lifeVersion
+      this.memoryVersion = undefined
       this.view.authMode = saved.authMode; this.view.settings = saved.settings; this.view.preparation = saved.preparation; this.artifactHash = saved.artifactHash
       this.view.preparation.busy = false
       this.view.preparation.paused = saved.preparation.phase !== 'idle' && saved.preparation.phase !== 'ready'
@@ -154,6 +157,7 @@ export class BackendEngine {
     const runId = newId()
     this.world = initialState(runId)
     this.life = null; this.lifeVersion = 1; delete this.view.simulation
+    this.memoryVersion = this.persistenceFactory ? 1 : undefined
     this.view.preparation = emptyPreparation(); this.artifactHash = null; this.view.error = null
     const root = path.join(this.base, runId)
     if (this.persistenceFactory) { this.persistence = this.coordinator(root); await this.persistence.initialize() }
@@ -346,13 +350,14 @@ NPCのモデルAutoとeffort Autoは独立しています。effortはsettings.np
   private async createBinding(binding: SessionBinding, instructions: string, seed: string): Promise<void> {
     if (this.persistence) binding.persistenceVersion = 2
     if (this.lifeVersion && binding.role !== 'parent') binding.lifeToolsVersion = 1
+    if (this.memoryVersion && binding.role === 'npc') binding.memoryVersion = this.memoryVersion
     const p = this.view.preparation
     if (p.sessions.some(s => s.agentId === binding.agentId)) throw new Error(`Session生成が既に記録されています: ${binding.agentId}`)
     await mkdir(binding.cwd, { recursive: true })
     binding.cwd = await realpath(binding.cwd)
     p.sessions.push(binding); await this.persist()
     await this.persistence?.markDirty()
-    binding.threadId = await this.runtime.create(binding, instructions, this.lifeVersion && binding.role !== 'parent' ? { tools: lifeTools(binding.role), disableEnvironment: true } : undefined)
+    binding.threadId = await this.runtime.create(binding, instructions, this.lifeVersion && binding.role !== 'parent' ? { tools: lifeTools(binding.role, binding.memoryVersion === 1), disableEnvironment: true } : undefined)
     binding.creation = 'created'; await this.persist()
     await this.runtime.seed(binding, seed)
     binding.seedPersisted = true; await this.persist()
@@ -373,7 +378,7 @@ NPCのモデルAutoとeffort Autoは独立しています。effortはsettings.np
       const effort = resolveEffort(requireModel(this.view.models, npc.birthModelId), settings.npc.effort, npc.age)
       await this.workspace.write(`agents/${npc.id}/character.json`, JSON.stringify(npc, null, 2))
       await this.workspace.write(`agents/${npc.id}/memory.md`, `# ${npc.name}\n\n初期化時点です。まだシミュレーション上の経験はありません。\n`)
-      await this.createBinding({ agentId: npc.id, sessionId: npc.id, role: 'npc', modelId: npc.birthModelId, effort: effort.effective, cwd: path.join(this.workspace.root, `agents/${npc.id}`), threadId: null, creation: 'requested', seedPersisted: false }, this.prompts.npc(npc, draft.specification), JSON.stringify({ initialConditions: npc, town: draft.specification.town.setting, turn: 0, effectiveEffort: effort }))
+      await this.createBinding({ agentId: npc.id, sessionId: npc.id, role: 'npc', modelId: npc.birthModelId, effort: effort.effective, cwd: path.join(this.workspace.root, `agents/${npc.id}`), threadId: null, creation: 'requested', seedPersisted: false }, this.prompts.npc(npc, draft.specification, this.memoryVersion === 1), JSON.stringify({ initialConditions: npc, town: draft.specification.town.setting, turn: 0, effectiveEffort: effort }))
     }
     for (const facility of draft.specification.town.facilities) {
       if (this.stopRequested) { p.paused = true; p.busy = false; await this.persist(); return }
@@ -407,7 +412,12 @@ NPCのモデルAutoとeffort Autoは独立しています。effortはsettings.np
       binding.cwd = await realpath(binding.cwd)
       const npc = p.population?.npcs.find(n => n.id === binding.agentId)
       if (binding.role === 'npc' && (!npc || npc.birthModelId !== binding.modelId)) throw new Error(`保存済みSessionと出生時モデルが一致しません: ${binding.agentId}`)
-      await this.runtime.resume(binding, binding.role === 'parent' ? this.prompts.parent() : undefined)
+      let instructions = binding.role === 'parent' ? this.prompts.parent() : undefined
+      if (binding.role === 'npc' && binding.lifeToolsVersion) {
+        if (!npc || !p.draft) throw new Error(`NPCの再接続に必要な初期情報と仕様がありません: ${binding.agentId}`)
+        instructions = this.prompts.npc(npc, p.draft.specification, binding.memoryVersion === 1)
+      }
+      await this.runtime.resume(binding, instructions)
       await this.sessions.attach(binding)
       binding.creation = 'initialized'
     }
@@ -435,6 +445,11 @@ NPCのモデルAutoとeffort Autoは独立しています。effortはsettings.np
       return { ...value, effort: resolveEffort(model, { mode: 'fixed', effort: fixed.effort }, 18).effective }
     }
     this.life = new LifeHarness(p.draft.specification, p.population, {
+      ...(this.memoryVersion ? { cognition: { runId, match: async (id: string, cue: string, records: import('../core/memory-contracts').MemoryRecord[], signal: AbortSignal, progress: (value: import('./memory-matcher').MemoryMatchProgress) => Promise<void>) => {
+        const npc = binding(id)
+        if (npc.memoryVersion !== 1 || !this.runtime.matchMemories) throw new Error(`記憶照合に対応していないConversationです: ${id}`)
+        return this.runtime.matchMemories({ agentId: id, modelId: npc.modelId, effort: npc.effort, cwd: npc.cwd, cue, memories: records.map(record => ({ id: record.id, text: `${record.text}\n本人にとっての意味: ${record.meaning}`, ...record.cues })) }, signal, progress)
+      } } } : {}),
       start: (id, text, clientId) => this.runtime.startTurn(binding(id), text, [], clientId),
       steer: (id, turnId, text, clientId) => this.runtime.steer(binding(id).threadId!, turnId, text, clientId),
       compact: id => this.runtime.compact(binding(id).threadId!),
@@ -598,6 +613,7 @@ NPCのモデルAutoとeffort Autoは独立しています。effortはsettings.np
       for (const a of simulation.actors) positions[a.id] = a.locationId
     }
     this.world = stateSchema.parse({ ...state, agents, map,
+      ...(this.life?.memoryRelations() ? { relationships: { observedAt: new Date().toISOString(), observedTurn: simulation!.turn, day: simulation!.day, relations: this.life.memoryRelations()!.map(r => ({ ...r, id: `${r.source}->${r.target}`, evidence: r.evidence.map(e => ({ ...e, ownerId: r.source })) })) } } : {}),
       stage: simulation ? simulation.stage === 'initializing' ? 'preparing' : simulation.stage : p.phase === 'idle' ? 'draft' : p.phase === 'ready' ? 'ready' : p.paused ? 'paused' : 'preparing',
       frame: { revision: state.frame.revision + 1, turn: simulation?.turn ?? 0, day: simulation?.day ?? 1, phase: simulation?.time ?? 'morning', mapRevision: map?.revision ?? null, positions },
       ...(simulation ? { simulation } : {}) })
@@ -633,6 +649,14 @@ NPCのモデルAutoとeffort Autoは独立しています。effortはsettings.np
     if (this.life && binding && data !== '\x03' && await this.life.bufferTerminal(binding.agentId, data)) return
     await this.sessions.input(id, data)
   }
+  async conversation(id: string) {
+    this.ensureConnected()
+    const binding = this.view.preparation.sessions.find(s => s.sessionId === id)
+    if (!binding?.threadId) throw new Error(`Conversationがありません: ${id}`)
+    return this.runtime.conversation(binding.threadId)
+  }
+  memoryInspection(id: string) { if (!this.life) throw new Error('生活ワールドがありません'); return this.life.memoryInspection(id) }
+  memoryDetail(id: string, memoryId: string, revision: number) { if (!this.life) throw new Error('生活ワールドがありません'); return this.life.memoryDetail(id, memoryId, revision) }
   newRun(): Promise<void> {
     if (this.persistence) return this.newMemoryRun()
     this.stopRequested = true

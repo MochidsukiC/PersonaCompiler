@@ -36,6 +36,16 @@ function register(channel: string, operation: (...args: unknown[]) => unknown): 
 }
 
 const identifier = z.string().min(1).max(160)
+register('memory-inspection', id => {
+  const target = currentEngine()
+  if (!(target instanceof BackendEngine)) throw new Error('このワールドは記憶機能の対象外です')
+  return target.memoryInspection(identifier.parse(id))
+})
+register('memory-detail', (id, memoryId, revision) => {
+  const target = currentEngine()
+  if (!(target instanceof BackendEngine)) throw new Error('このワールドは記憶機能の対象外です')
+  return target.memoryDetail(identifier.parse(id), identifier.parse(memoryId), z.number().int().positive().parse(revision))
+})
 register('snapshot', () => { const engine = currentEngine(); return engine instanceof BackendEngine ? engine.snapshot() : engine.workspace.snapshot() })
 register('backend-status', () => {
   const engine = currentEngine()
@@ -83,6 +93,11 @@ register('reveal', async relative => {
   } else shell.showItemInFolder(await currentEngine().workspace.resolve(value))
 })
 register('terminal-snapshot', id => currentEngine().sessions.snapshot(identifier.parse(id)))
+register('conversation', id => {
+  const target = currentEngine()
+  if (!(target instanceof BackendEngine)) throw new Error('メッセージ履歴は実Codex接続時に利用できます')
+  return target.conversation(identifier.parse(id))
+})
 register('terminal-input', (id, data) => currentEngine().terminalInput(identifier.parse(id), z.string().max(65536).parse(data)))
 register('terminal-resize', (id, columns, rows) => currentEngine().sessions.resize(identifier.parse(id), z.number().int().min(2).max(500).parse(columns), z.number().int().min(1).max(200).parse(rows)))
 register('terminal-interrupt', id => currentEngine().interrupt(identifier.parse(id)))

@@ -125,6 +125,32 @@ describe('Residential space', () => {
 })
 
 describe('Autonomous life harness', () => {
+  it.each([false, true])('keeps ordinary NPC thoughts and monologues out of world actions and deliveries (memory=%s)', async memory => {
+    const services = new Services()
+    if (memory) Object.assign(services, { memory: { initialize: () => undefined, changed: () => undefined } })
+    const { harness } = await setup(8, undefined, services)
+    await harness.start(true); await active(harness)
+    await call(harness, 'npc1', 'endTurn')
+    await harness.drain()
+    const before = harness.checkpoint()
+    const starts = services.starts.length
+    for (const [index, text] of ['【心の声】今日は家でゆっくりしよう。', '【独り言】お茶が飲みたいな。'].entries()) {
+      harness.notify('npc0', 'item/agentMessage/delta', { itemId: `thought-${index}`, delta: text })
+      harness.notify('npc0', 'item/completed', { item: { id: `thought-${index}`, type: 'agentMessage', phase: index ? 'final_answer' : 'commentary', text } })
+    }
+    await harness.drain()
+    expect(harness.checkpoint()).toEqual(before)
+    expect(services.starts).toHaveLength(starts)
+    expect(services.steers).toEqual([])
+    expect(services.errors).toEqual([])
+    expect(JSON.stringify(JSON.parse((await call(harness, 'npc1', 'getSituation')).contentItems[0].text))).not.toContain('お茶が飲みたい')
+    services.finish('npc0')
+    await harness.drain()
+    expect(harness.snapshot()).toMatchObject({ turn: 1, phase: 'activity', stage: 'running' })
+    expect(harness.snapshot().actors.find(a => a.id === 'npc0')!.activity).toBe('active')
+    expect(harness.snapshot().actors.find(a => a.id === 'npc1')!.activity).toBe('ended')
+    expect(harness.snapshot().events.filter(e => e.kind === 'speech')).toEqual([])
+  })
   it('executes memory tools without any save acknowledgement, bounds events, and preserves duplicate results', async () => {
     const changes: LifeChange[] = []
     const services = Object.assign(new Services(), { memory: { initialize: () => undefined, changed: (change: LifeChange) => { changes.push(change) } } })

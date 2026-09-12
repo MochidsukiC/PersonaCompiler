@@ -72,6 +72,10 @@ it('routes dynamic tools with a real remote TUI, steers inference and compacts t
     binding.seedPersisted = true
     const first = await runtime.startTurn(binding, 'CALL_LIFE_TOOL')
     await wait(() => completed(first), 'backend tool completion')
+    const conversation = await runtime.conversation(binding.threadId)
+    const firstItems = conversation.find(turn => turn.id === first)!.items
+    expect(firstItems.map(item => item.type)).toEqual(['userMessage', 'dynamicToolCall', 'agentMessage'])
+    expect(firstItems[1]).toMatchObject({ tool: 'getSituation', arguments: {}, success: true, contentItems: [{ type: 'inputText', text: expect.stringContaining('LIFE_TOOL_RESULT') }] })
     const rejected = await runtime.steer(binding.threadId, first, '完了済み推論への入力').then(() => null, error => ({ message: error.message, code: error.code }))
     expect(rejected).not.toBeNull()
     events.push({ method: 'probe/steerRejected', params: rejected })
@@ -98,6 +102,7 @@ it('routes dynamic tools with a real remote TUI, steers inference and compacts t
     await terminals.dispose()
     await runtime.connect('chatgpt')
     await runtime.resume(binding)
+    expect((await runtime.conversation(binding.threadId)).find(turn => turn.id === first)?.items).toEqual(firstItems)
     await terminals.attach(binding)
     const resumed = await runtime.startTurn(binding, 'CALL_LIFE_TOOL')
     await wait(() => completed(resumed), 'resumed tools')

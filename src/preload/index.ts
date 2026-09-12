@@ -2,6 +2,8 @@ import { contextBridge, ipcRenderer } from 'electron'
 import type { AppEvent, DesktopApi } from '../shared/contracts'
 
 const api: DesktopApi = {
+  memoryInspection: id => ipcRenderer.invoke('persona:memory-inspection', id),
+  memoryDetail: (id, memoryId, revision) => ipcRenderer.invoke('persona:memory-detail', id, memoryId, revision),
   backendStatus: () => ipcRenderer.invoke('persona:backend-status'),
   backendCommand: command => ipcRenderer.invoke('persona:backend-command', command),
   snapshot: () => ipcRenderer.invoke('persona:snapshot'),
@@ -15,6 +17,7 @@ const api: DesktopApi = {
   openExternal: path => ipcRenderer.invoke('persona:open-external', path),
   reveal: path => ipcRenderer.invoke('persona:reveal', path),
   terminalSnapshot: id => ipcRenderer.invoke('persona:terminal-snapshot', id),
+  conversation: id => ipcRenderer.invoke('persona:conversation', id),
   terminalInput: (id, data) => ipcRenderer.invoke('persona:terminal-input', id, data),
   terminalResize: (id, columns, rows) => ipcRenderer.invoke('persona:terminal-resize', id, columns, rows),
   terminalInterrupt: id => ipcRenderer.invoke('persona:terminal-interrupt', id),

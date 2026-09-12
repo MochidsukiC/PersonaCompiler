@@ -42,6 +42,10 @@ Windowsのnode-pty 1.1.0にはNode-APIの公式バイナリーが同梱されて
 
 親の全体方針には、提供された `src/core/prompts/parent-system.md` のtextコードブロックを使用します。原文を保持し、`src/core/prompts.ts`で現行の準備フェーズ用規則とJSON Schemaを末尾に付けます。最初の質問ラウンド、Harnessによる承認・Session作成、turn=0での停止は維持します。生活進行は親から分離したCoreが担当し、総合出力形式は将来の実装対象です。新しい親Conversationの作成時、およびアプリ再起動後に保存済みのConversationへ接続するときに適用します。接続中のCLIだけを再接続してもbaseInstructionsは更新されないため、プロンプト変更後はアプリを再起動してください。既存のConversation ID・会話履歴・承認済み仕様は引き継ぎます。
 
+## 主観的な記憶
+
+新規ワールドのNPCは、主観的な記憶・予定・睡眠時の整理・方向別の対人認識に対応します。NPC端末の「記憶・未来の意図」と関係図から確認できます。既存ワールドには自動追加しません。Tool、保存、検証方法は [MEMORY.md](MEMORY.md) を参照してください。
+
 ## NPCのAuto
 
 モデルAutoとeffort Autoは独立しています。初期値は接続先の既定モデル・既定effortを使う固定モードです。Harnessは親の初期文脈と各準備・人口生成要求に、保存済みの役割別モデル設定、Auto／固定の区別、固定モデルID、利用可能なNPCモデル候補を明示します。固定の場合も全NPCのbirthModelId・modelSelectionReasonを生成対象に含めます。

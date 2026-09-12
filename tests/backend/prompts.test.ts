@@ -2,8 +2,17 @@ import { describe, expect, it } from 'vitest'
 import { readFile } from 'node:fs/promises'
 import { BootstrapPrompts } from '../../src/core/prompts'
 import { population, draft } from './fixtures'
+import { lifeTools } from '../../src/core/life-contracts'
 
 describe('Parent prompt integration', () => {
+  it('enables memory prompts and tools only for new versioned NPC conversations', () => {
+    const prompts = new BootstrapPrompts()
+    expect(prompts.npc(population.npcs[0], draft.specification)).not.toContain('consolidateMemory')
+    expect(prompts.npc(population.npcs[0], draft.specification, true)).toContain('consolidateMemory')
+    expect(lifeTools('npc').map(t => t.name)).not.toContain('remember')
+    expect(lifeTools('facility', true).map(t => t.name)).not.toContain('remember')
+    expect(lifeTools('npc', true).map(t => t.name)).toEqual(expect.arrayContaining(['remember', 'recall', 'remindMe', 'consolidateMemory']))
+  })
   it('includes the supplied system text while selecting the preparation output contract', async () => {
     const document = await readFile('src/core/prompts/parent-system.md', 'utf8')
     const source = /^```text\r?\n([\s\S]*?)^```\s*$/m.exec(document)![1].trim()
@@ -25,5 +34,15 @@ describe('Parent prompt integration', () => {
       expect(text).not.toContain('world_state')
       expect(text).toContain('turn=0')
     }
+  })
+  it('asks NPCs for user-visible character messages separately from speech tools and private reasoning', () => {
+    const prompt = new BootstrapPrompts().npc(population.npcs[0], draft.specification)
+    expect(prompt).toContain('【心の声】')
+    expect(prompt).toContain('【独り言】')
+    expect(prompt).toContain('ユーザーだけに表示され、他のNPCへは届きません')
+    expect(prompt).toContain('JSONや専用Toolは使いません')
+    expect(prompt).toContain('独り言をsendMessageで配信しないでください')
+    expect(prompt).toContain('モデルの内部推論や逐次的な思考過程を出力するのではなく')
+    expect(prompt).toContain('文章を返すだけでは世界ターンは終了しません')
   })
 })

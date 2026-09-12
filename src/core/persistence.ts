@@ -1,9 +1,11 @@
 import type { LifeCheckpoint } from './life-harness'
 import type { AgentModelSettings, PreparationProgress } from './contracts'
+import type { MemoryArchive } from './memory-contracts'
 
 export interface SavedBackend {
   version: 1
   lifeVersion?: 1
+  memoryVersion?: 1
   authMode: 'chatgpt' | 'apiKey' | null
   settings: AgentModelSettings | null
   preparation: PreparationProgress
@@ -23,6 +25,7 @@ export interface PersistenceStatus {
 }
 export interface LifePatch { path: (string | number)[]; value: unknown }
 export type LifeHistoryRecord =
+  | MemoryArchive
   | { kind: 'job'; value: LifeCheckpoint['jobs'][number] }
   | { kind: 'receipt'; key: string; value: LifeCheckpoint['receipts'][string] }
   | { kind: 'event'; value: LifeCheckpoint['world']['events'][number] }

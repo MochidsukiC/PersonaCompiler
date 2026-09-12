@@ -1,0 +1,36 @@
+.chat-view-switch{display:flex;gap:4px;padding:8px 14px;border-bottom:1px solid var(--line);flex-shrink:0;background:#18211c}
+.chat-view-switch button{display:flex;align-items:center;justify-content:center;gap:7px;flex:1;border-radius:6px;padding:8px;color:#95a99d;font-size:11px}
+.chat-view-switch button[aria-pressed=true]{background:#344b3c;color:#e1efdf;box-shadow:inset 0 0 0 1px #536c56}
+.terminal-host[hidden],.terminal-footer[hidden]{display:none}
+.message-view{position:relative;display:flex;flex-direction:column;flex:1;min-height:0;background:#243b36}
+.message-info{display:flex;align-items:center;gap:7px;padding:11px 15px;color:#b8cdc4;background:#20332d;font-size:10px;flex-shrink:0}
+.message-info>span{margin-left:auto;color:#9eb5a7;font-size:9px}
+.message-scroll{flex:1;min-height:0;overflow:auto;overscroll-behavior:contain;padding:8px 15px 24px}
+.message-divider{display:flex;justify-content:center;margin:18px 0;color:#c3d4cc;font-size:9px}
+.message-divider span{border-radius:20px;background:#182b2680;padding:5px 11px;text-align:center}
+.message-row{display:flex;align-items:flex-start;gap:8px;margin:15px 0}
+.message-row>.avatar{width:28px;height:28px;flex-shrink:0;margin-top:18px;font-size:11px}
+.message-row.input{justify-content:flex-end;padding-left:30px}
+.message-body{max-width:calc(100% - 36px);min-width:0}
+.message-row.input .message-body{max-width:100%}
+.message-body>small{display:block;font-size:9px;color:#bdcec5;margin:0 3px 5px}
+.message-row.input small{text-align:right}
+.message-bubble{background:#edf2eb;color:#24362a;line-height:1.9;white-space:pre-wrap;overflow-wrap:anywhere;padding:11px 14px;border-radius:4px 16px 16px 16px;font-size:12px;box-shadow:0 2px 4px #10201b26;user-select:text}
+.message-row.input .message-bubble{background:#b5de9d;border-radius:16px 4px 16px 16px;color:#233b21}
+.thought-bubble{position:relative;border-radius:29px;border:2px solid #cedcc9;padding:15px 18px;background:#f0f3eb;box-shadow:3px -3px 0 -1px #e3ebdd,-3px 3px 0 -1px #e3ebdd}
+.thought-bubble::before,.thought-bubble::after{content:'';position:absolute;background:#e3ebdd;border:1px solid #cedcc9;border-radius:50%}
+.thought-bubble::before{width:10px;height:8px;left:-9px;bottom:2px}.thought-bubble::after{width:5px;height:5px;left:-17px;bottom:-4px}
+.message-body>.thought-visibility{margin:7px 6px 0;font-size:8px;color:#9db5a7}
+.message-tool{margin:12px 0 12px 36px;border:1px solid #52685b;background:#20332e;border-radius:9px;overflow:hidden}
+.message-tool summary{display:flex;align-items:center;gap:7px;padding:11px;cursor:pointer;list-style:none;color:#c2d6c7}
+.message-tool summary::after{content:'＋';margin-left:auto;color:#9fb9aa}
+.message-tool[open] summary::after{content:'−'}
+.message-tool summary strong{font-size:11px;overflow-wrap:anywhere;font-weight:500}
+.message-tool summary span{font-size:9px;white-space:nowrap;color:#a8cfa7}
+.message-tool.failed{border-color:#b88469}.message-tool.failed summary span{color:#efba9e}
+.message-tool pre{white-space:pre-wrap;overflow-wrap:anywhere;margin:0;padding:10px 12px;font:10px/1.8 Consolas,"Yu Gothic UI",monospace;color:#d0ddd2;max-height:320px;overflow:auto;user-select:text}
+.tool-section{border-top:1px solid #3a5045}.tool-section>small{display:block;margin:10px 12px 0;color:#9db5a7;font-size:9px}
+.message-notice{margin:10px;padding:11px;border:1px solid #826951;border-radius:7px;background:#433a2d;color:#e2c6a6;font-size:11px;overflow-wrap:anywhere;flex-shrink:0}.message-notice p{margin:0 0 8px;line-height:1.7}
+.message-empty{color:#c0d1c7;text-align:center;margin:50px 0;line-height:1.8}.message-empty small{color:#9eb6a9;font-size:10px}
+.message-footer{flex-shrink:0;padding:10px;text-align:center;font-size:9px;background:#20332d;color:#a0b9ab;border-top:1px solid #3b5045}
+.message-latest{position:absolute;bottom:45px;right:18px;display:flex;align-items:center;gap:6px;border:1px solid #779582;border-radius:20px;background:#eff5ec;color:#2e5037;padding:8px 13px;box-shadow:0 3px 10px #10201b55;font-size:11px}.message-latest:hover{color:#203b23;background:#d9ebd5}

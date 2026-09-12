@@ -6,6 +6,7 @@ import { FacilityInterior } from './FacilityInterior'
 import { SpeechBubble, useSpeechBubbles } from './SpeechBubble'
 import { worldLayout, type SpeechBubble as Speech } from './world-presentation'
 import { WorldGraph } from './WorldGraph'
+import { MemoryEvidence } from './MemoryPanel'
 
 type FacilityData = { name: string; kind: string; people: AgentDescriptor[]; speech: Speech[]; onAgent: (id: string) => void; onFacility?: () => void }
 type FacilityNode = Node<FacilityData, 'facility'>
@@ -88,12 +89,20 @@ export const WorldView = memo(function WorldView({ state, mode, onAgent, staleRe
     {mode === 'map' && <div className="map-legend"><span><span className="legend-dot" /> 住民</span><span><MapPin size={12} /> {state.map?.locations.length} 施設</span><span>地図 v{state.map?.revision}</span></div>}
     {mode === 'map' && unknown.length > 0 && <div className="unplaced">位置未設定 {unknown.map(a => <button key={a.id} onClick={() => onAgent(a.id)}>{a.name}<ArrowUpRight size={11} /></button>)}</div>}
     {mode === 'relationships' && !state.relationships && <div className="observation-wait"><GitBranch size={22} /><strong>まだ観測結果がありません</strong><p>一日の終わりに、記憶から関係の輪郭が現れます。</p></div>}
-    {mode === 'relationships' && state.relationships && <div className="observation-time">Day {state.relationships.day} 終了時の観測 <span>· {state.relationships.relations.length} 関係</span>{staleRelations.length > 0 && <b>記憶更新あり</b>}</div>}
-    {mode === 'relationships' && selected && state.relationships && <RelationDetail relation={selected} snapshot={state.relationships} agents={state.agents} stale={staleRelations.includes(selected.id)} onFile={onFile} onClose={() => setRelationId(null)} />}
+    {mode === 'relationships' && state.relationships && <div className="observation-time">{state.relationships.relations.some(r => r.observedTurn !== undefined) ? '本人の整理結果・矢印ごとに更新' : `Day ${state.relationships.day} 終了時の観測`} <span>· {state.relationships.relations.length} 関係</span>{staleRelations.length > 0 && <b>記憶更新あり</b>}</div>}
+    {mode === 'relationships' && selected && state.relationships && <RelationDetail key={selected.id} relation={selected} snapshot={state.relationships} agents={state.agents} stale={staleRelations.includes(selected.id)} onFile={onFile} onClose={() => setRelationId(null)} />}
     {mode === 'relationships' && state.relationships && !selected && <div className="relation-shortcuts">{state.relationships.relations.map(relation => <button key={relation.id} onClick={() => setRelationId(relation.id)}>{state.agents.find(a => a.id === relation.source)?.name} → {state.agents.find(a => a.id === relation.target)?.name}<span>{relation.label}</span></button>)}</div>}
   </div>
 })
 
 function RelationDetail({ relation, snapshot, agents, stale, onFile, onClose }: { relation: RelationshipSnapshot['relations'][number]; snapshot: RelationshipSnapshot; agents: AgentDescriptor[]; stale: boolean; onFile: (path: string) => void; onClose: () => void }) {
-  return <div className="relation-detail" data-testid="relation-detail"><button className="icon-button close-detail" onClick={onClose} aria-label="関係の詳細を閉じる"><X size={14} /></button><span className="eyebrow">SUBJECTIVE RELATIONSHIP</span><h3>{agents.find(a => a.id === relation.source)?.name} → {agents.find(a => a.id === relation.target)?.name}</h3><span className="relation-label">{relation.label}</span><p>{relation.description}</p><small>Day {snapshot.day} / {new Date(snapshot.observedAt).toLocaleTimeString('ja-JP')} 観測</small>{stale && <div className="stale-label">観測後に根拠ファイルが変更されています</div>}<div className="evidence-label">根拠の記憶ファイル</div>{relation.evidence.map(evidence => <button className="evidence" key={evidence.path} onClick={() => onFile(evidence.path)}><FileText size={13} />{evidence.path}<ArrowUpRight size={13} /></button>)}<small className="demo-explanation">デモの関係ラベルです。任意の記憶の意味抽出は未接続です。</small></div>
+  const [selected, setSelected] = useState<{ ownerId: string; memoryId: string; revision: number } | null>(null)
+  const memory = relation.evidence.some(e => 'memoryId' in e)
+  return <div className="relation-detail" data-testid="relation-detail"><button className="icon-button close-detail" onClick={onClose} aria-label="関係の詳細を閉じる"><X size={14} /></button><span className="eyebrow">SUBJECTIVE RELATIONSHIP</span><h3>{agents.find(a => a.id === relation.source)?.name} → {agents.find(a => a.id === relation.target)?.name}</h3><span className="relation-label">{relation.label}</span><p>{relation.description}</p>
+    <small>{memory ? `本人が turn ${relation.observedTurn} に更新` : `Day ${snapshot.day} / ${new Date(snapshot.observedAt).toLocaleTimeString('ja-JP')} 観測`}</small>
+    {stale && <div className="stale-label">観測後に根拠ファイルが変更されています</div>}<div className="evidence-label">{memory ? '当時の記憶を確認' : '根拠の記憶ファイル'}</div>
+    {relation.evidence.map(evidence => 'path' in evidence ? <button className="evidence" key={evidence.path} onClick={() => onFile(evidence.path)}><FileText size={13} />{evidence.path}<ArrowUpRight size={13} /></button> : <button className="evidence" key={`${evidence.memoryId}/${evidence.revision}`} onClick={() => setSelected(evidence)}><FileText size={13} />{evidence.memoryId} · v{evidence.revision}<ArrowUpRight size={13} /></button>)}
+    {selected && <MemoryEvidence key={`${selected.ownerId}/${selected.memoryId}/${selected.revision}`} {...selected} />}
+    {!memory && <small className="demo-explanation">デモの関係ラベルです。任意の記憶の意味抽出は未接続です。</small>}
+  </div>
 }

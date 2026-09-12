@@ -87,7 +87,7 @@ export type Population = z.infer<typeof populationSchema>
 export const sessionBindingSchema = z.object({
   agentId: z.string().regex(/^[a-zA-Z0-9][a-zA-Z0-9_-]{0,88}$/), sessionId: z.string().regex(/^[a-zA-Z0-9][a-zA-Z0-9_-]{0,88}$/), role: z.enum(['parent', 'npc', 'facility']),
   threadId: z.string().nullable(), cwd: z.string(), modelId: z.string(), effort: effortSchema,
-  creation: z.enum(['requested', 'created', 'initialized']), seedPersisted: z.boolean(), lifeToolsVersion: z.literal(1).optional(), persistenceVersion: z.literal(2).optional()
+  creation: z.enum(['requested', 'created', 'initialized']), seedPersisted: z.boolean(), lifeToolsVersion: z.literal(1).optional(), persistenceVersion: z.literal(2).optional(), memoryVersion: z.literal(1).optional()
 })
 export type SessionBinding = z.infer<typeof sessionBindingSchema>
 export const preparationProgressSchema = z.object({
