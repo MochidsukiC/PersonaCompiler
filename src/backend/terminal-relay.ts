@@ -11,6 +11,7 @@ export class TerminalRelay {
   private readonly upstreams = new Set<WebSocket>()
   private endpoint = ''
   private accepting = true
+  private readonly readOnly = new Set<string>()
   private readonly pending = new Set<{ method: string; id: string | number }>()
   private readonly waiters = new Set<() => void>()
   constructor(private readonly upstream: string, private readonly token: string, private readonly failed: (error: Error) => void) {}
@@ -48,6 +49,10 @@ export class TerminalRelay {
         catch { client.close(1007, 'Invalid JSON'); return }
         const params = message.params
         const inference = ['turn/start', 'turn/steer', 'thread/compact/start', 'thread/inject_items', 'thread/start'].includes(message.method ?? '')
+        if (inference && typeof params?.threadId === 'string' && this.readOnly.has(params.threadId)) {
+          client.send(JSON.stringify({ id: message.id, error: { code: -32600, message: 'このConversationは現在閲覧専用です' } }))
+          return
+        }
         if (inference && !this.accepting) {
           client.send(JSON.stringify({ id: message.id, error: { code: -32600, message: 'アプリの終了処理中です。新規入力は受け付けません' } }))
           return
@@ -87,6 +92,7 @@ export class TerminalRelay {
     this.bindings.set(binding.threadId, binding)
     return this.endpoint
   }
+  setReadOnly(threadId: string, value: boolean): void { if (value) this.readOnly.add(threadId); else this.readOnly.delete(threadId) }
   async quiesce(): Promise<void> {
     this.accepting = false
     if (!this.pending.size) return

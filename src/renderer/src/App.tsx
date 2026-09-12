@@ -5,6 +5,7 @@ import { Explorer } from './Explorer'
 import { TerminalPane } from './TerminalPane'
 import { WorldView } from './WorldView'
 import { BackendPanel } from './BackendPanel'
+import { LifecyclePanel } from './LifecyclePanel'
 import { PersistencePanel } from './PersistencePanel'
 
 const phaseLabels = { morning: '朝', noon: '昼', evening: '夕', night: '夜' }
@@ -106,6 +107,7 @@ export default function App() {
       <div className="resize-handle" role="separator" aria-label="エクスプローラー幅" aria-orientation="vertical" onPointerDown={event => beginResize(event, 'left')} />
       <section className="center-panel">
         <div className="center-tabs"><button className={!selectedFile && mode === 'map' ? 'active' : ''} onClick={() => { setSelectedFile(null); setMode('map') }}><Map size={15} />ワールド</button><button className={!selectedFile && mode === 'relationships' ? 'active' : ''} onClick={() => { setSelectedFile(null); setMode('relationships') }}><GitBranch size={15} />関係図</button>{selectedFile && <button className="active file-tab" onClick={() => setSelectedFile(null)}><FileText size={14} /><span>{selectedFile.split('/').at(-1)}</span><X size={13} /></button>}<span className="view-label">{selectedFile ? 'FILE PREVIEW' : 'OBSERVATORY'}</span></div>
+        {state.simulation?.lifecycle && !selectedFile && <LifecyclePanel simulation={state.simulation} backend={workspace.backend} onAgent={openAgent} onFile={openFile} onError={report} />}
         {workspace.backend && !selectedFile && <BackendPanel key={runId} view={workspace.backend} onError={report} />}
         {selectedFile ? <div className="file-preview"><div className="file-preview-heading"><span title={selectedFile}>{selectedFile}</span><button className="icon-button" aria-label="外部エディターで開く" title="外部エディターで開く" onClick={() => void window.persona.openExternal(selectedFile).catch(report)}><ExternalLink size={15} /></button><button className="icon-button" aria-label="Windows Explorerで表示" title="Windows Explorerで表示" onClick={() => void window.persona.reveal(selectedFile).catch(report)}><FolderOpen size={15} /></button></div>{previewError && <div className="preview-error">{previewError} {preview && '前回の内容を表示しています。'}</div>}{preview ? preview.kind === 'image' ? <img className="image-preview" alt={selectedFile} src={preview.content} /> : <pre data-testid="file-content">{preview.content}</pre> : !previewError && <p className="muted">読み込み中…</p>}<div className="preview-footer">READ ONLY VIEW <span>編集は外部エディターへ · 保存すると自動反映</span></div></div>
           : state.map ? <WorldView state={state} mode={mode} onAgent={openAgent} staleRelations={workspace.staleRelations} onFile={openFile} />
@@ -114,7 +116,7 @@ export default function App() {
         <div className="world-footer"><span><span className="status-dot" />{npcs.length} 人の住民</span><span>{state.map?.locations.length ?? 0} 施設</span><span>{state.relationships?.relations.length ?? 0} 関係</span><span className="footer-right">{state.map ? '人物をクリックして端末を開く' : 'まずは世界の準備から'}</span></div>
       </section>
       <div className="resize-handle" role="separator" aria-label="端末幅" aria-orientation="vertical" onPointerDown={event => beginResize(event, 'right')} />
-      {agent ? <TerminalPane key={`${runId}:${agent.sessionId}`} agent={agent} real={!!workspace.backend} memoryEnabled={workspace.backend?.preparation.sessions.some(s => s.agentId === agent.id && s.memoryVersion === 1)} connected={!readOnly && (!workspace.backend || (workspace.backend.connection === 'connected' && workspace.backend.authenticated))} onError={report} /> : <div className="terminal-empty"><Layers3 size={24} /><strong>端末を選択してください</strong><p>地図やエージェント一覧から開けます。<br />非表示のSessionも継続しています。</p></div>}
+      {agent ? <TerminalPane key={`${runId}:${agent.sessionId}`} agent={agent} readOnly={state.simulation?.actors.some(a => a.id === agent.id && (a.activity === 'dead' || state.simulation?.stage === 'ended'))} real={!!workspace.backend} memoryEnabled={workspace.backend?.preparation.sessions.some(s => s.agentId === agent.id && s.memoryVersion === 1)} connected={!readOnly && (!workspace.backend || (workspace.backend.connection === 'connected' && workspace.backend.authenticated))} onError={report} /> : <div className="terminal-empty"><Layers3 size={24} /><strong>端末を選択してください</strong><p>地図やエージェント一覧から開けます。<br />非表示のSessionも継続しています。</p></div>}
       <nav className="vertical-tabs" aria-label="端末タブ">{tabs.map(id => {
         const person = state.agents.find(item => item.id === id)
         if (!person) return null

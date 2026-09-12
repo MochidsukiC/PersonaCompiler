@@ -21,6 +21,7 @@ const completedTurnSchema = z.object({ threadId: z.string(), turn: z.object({ id
 
 export interface RuntimeAccount { authenticated: boolean; mode: 'chatgpt' | 'apiKey' | null }
 export interface AgentRuntime {
+  setThreadPolicy?(binding: SessionBinding, readOnly: boolean): void
   matchMemories?(input: MemoryMatchInput, signal: AbortSignal, progress: (value: MemoryMatchProgress) => Promise<void>): Promise<string[]>
   setToolHandler(handler: (call: RuntimeToolCall) => Promise<RuntimeToolResult>): void
   onNotification(listener: (event: RpcNotification) => void): () => void
@@ -212,6 +213,10 @@ export class CodexRuntime implements AgentRuntime {
       ...(clientUserMessageId ? { clientUserMessageId } : {})
     }))
     return result.turn.id
+  }
+  setThreadPolicy(binding: SessionBinding, readOnly: boolean): void {
+    this.terminalEndpoint(binding)
+    this.relay?.setReadOnly(binding.threadId!, readOnly)
   }
   async interrupt(threadId: string, turnId: string): Promise<void> {
     if (this.completedTurns.get(threadId) === turnId) return

@@ -1,5 +1,6 @@
 import { z } from 'zod'
 import { memoryProgressSchema, memoryTools } from './memory-contracts'
+import { lifecycleSchema, lifecycleTools } from './lifecycle-contracts'
 
 const id = z.string().regex(/^[a-zA-Z0-9][a-zA-Z0-9_-]{0,88}$/)
 export const voxelSchema = z.object({ x: z.number().int().nonnegative(), y: z.number().int().nonnegative(), z: z.number().int().nonnegative() }).strict()
@@ -11,15 +12,16 @@ export const facilityLayoutSchema = z.object({ regions: z.array(regionSchema), h
 export const lifeFacilitySchema = z.object({ id, locationId: id, name: z.string(), type: z.string(), dimensions: dimensionsSchema, layout: facilityLayoutSchema.nullable() })
 export const lifeActorSchema = z.object({
   id, name: z.string(), householdId: id, locationId: id, position: voxelSchema.nullable(),
-  activity: z.enum(['entering', 'active', 'ended', 'sleeping']), nextFacilityId: id.nullable(), wakeAt: z.number().int().nullable(),
+  activity: z.enum(['entering', 'active', 'ended', 'sleeping', 'dead']), nextFacilityId: id.nullable(), wakeAt: z.number().int().nullable(),
   compact: z.enum(['none', 'pending', 'running', 'complete'])
 })
 export const voiceSchema = z.enum(['low', 'medium', 'high'])
 export const lifeEventSchema = z.object({
-  sequence: z.number().int(), turn: z.number().int(), kind: z.enum(['move', 'travel', 'speech', 'facility', 'sleep', 'wake', 'end', 'entry']),
+  sequence: z.number().int(), turn: z.number().int(), kind: z.enum(['move', 'travel', 'speech', 'facility', 'sleep', 'wake', 'end', 'entry', 'death', 'birth', 'marriage', 'home']),
   actorId: id, text: z.string(), recipients: z.array(id), volume: voiceSchema.optional(), locationId: id, position: voxelSchema.nullable()
 })
 export const simulationSchema = z.object({
+  lifecycle: lifecycleSchema.optional(),
   memoryProgress: z.record(z.string(), memoryProgressSchema).optional(),
   version: z.literal(1), revision: z.number().int().nonnegative(),
   stage: z.enum(['initializing', 'ready', 'running', 'paused', 'ended', 'error']),
@@ -60,9 +62,9 @@ export const lifeToolDescriptions: Record<LifeToolName, string> = {
   endTurn: '現在の世界ターンの活動を終了する。起きている間は届いた発話から活動を再開できる。',
   sleep: '現在の時間帯の活動を終了して眠る。同じConversationでCompactした後、次の世界ターン開始時に起床する。'
 }
-export function lifeTools(role: 'npc' | 'facility', memoryEnabled = false) {
+export function lifeTools(role: 'npc' | 'facility', memoryEnabled = false, lifecycleEnabled = false) {
   const names: LifeToolName[] = role === 'npc'
     ? ['getSituation', 'setInitialPosition', 'moveWithinFacility', 'moveToFacility', 'sendMessage', 'useFacility', 'endTurn', 'sleep']
     : ['initializeFacility', 'completeFacilityUse']
-  return [...names.map(name => ({ type: 'function' as const, name, description: lifeToolDescriptions[name], inputSchema: z.toJSONSchema(lifeToolSchemas[name]) })), ...(role === 'npc' && memoryEnabled ? memoryTools() : [])]
+  return [...names.map(name => ({ type: 'function' as const, name, description: lifeToolDescriptions[name], inputSchema: z.toJSONSchema(lifeToolSchemas[name]) })), ...(role === 'npc' && memoryEnabled ? memoryTools() : []), ...(lifecycleEnabled ? lifecycleTools(role) : [])]
 }

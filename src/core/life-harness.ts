@@ -2,14 +2,18 @@ import { z } from 'zod'
 import { isDeepStrictEqual } from 'node:util'
 import type { LifeChange, LifeHistoryRecord } from './persistence'
 import { lifeTransaction, plainLifeValue } from './life-transaction'
-import type { Population, Specification } from './contracts'
+import type { NpcInitialization, Population, Specification } from './contracts'
 import { lifeToolSchemas, simulationSchema, type LifeActor, type LifeFacility, type SimulationSnapshot } from './life-contracts'
-import { contains, households, LifeRuleError, speechRecipients, validPosition, validateLayout, validateLifeSpecification } from './spatial'
+import { overlaps, contains, households, LifeRuleError, speechRecipients, validPosition, validateLayout, validateLifeSpecification } from './spatial'
 import { MEMORY_BUDGET, MEMORY_CONSOLIDATION_PROMPT, MemoryMatchUncertainError, memoryArchiveSchema, memoryReferenceSchema, memorySnapshotSchema, memoryToolSchemas, type MemoryMutation, type MemoryRecord, type RecallOperation } from './memory-contracts'
 import { NpcMemoryStore, normalizeCue, recallable } from './memory-store'
 
+import { lifecycleToolSchemas, identitySchema, type Birth, type Resident } from './lifecycle-contracts'
+import { initializeLifecycle, ageDay, endReason, marry, living, resident } from './lifecycle'
+
 const jobSchema = z.object({
-  id: z.string(), agentId: z.string(), text: z.string(), kind: z.enum(['layout', 'position', 'activity', 'message', 'facility', 'reply', 'compact', 'user', 'consolidation']),
+  homeRequestId: z.string().optional(),
+  id: z.string(), agentId: z.string(), text: z.string(), kind: z.enum(['layout', 'position', 'activity', 'message', 'facility', 'reply', 'compact', 'user', 'consolidation', 'home', 'notice']),
   status: z.enum(['queued', 'deferred', 'requested', 'running', 'done', 'discarded']), turnId: z.string().nullable(), completed: z.boolean(), reminders: z.array(memoryReferenceSchema).optional(), consolidationError: z.string().optional()
 })
 const resultSchema = z.object({ success: z.boolean(), contentItems: z.array(z.object({ type: z.literal('inputText'), text: z.string() })) })
@@ -27,6 +31,7 @@ type ToolResult = z.infer<typeof resultSchema>
 export interface LifeHistoryTurn { id: string; status: string; clientIds: string[]; compact: boolean }
 export class TurnAlreadyEndedError extends Error {}
 export interface LifeServices {
+  lifecycle?: { seed: string; birth(request: Birth, parents: Resident[], turn: number): Promise<NpcInitialization> }
   start(agentId: string, text: string, clientId: string): Promise<string>
   steer(agentId: string, turnId: string, text: string, clientId: string): Promise<void>
   compact(agentId: string): Promise<void>
@@ -60,19 +65,21 @@ export class LifeHarness {
   private readonly cueTasks = new Map<string, Promise<ToolResult>>()
 
   constructor(private readonly specification: Specification, private readonly population: Population, private readonly services: LifeServices, saved?: LifeCheckpoint) {
-    validateLifeSpecification(specification)
+    validateLifeSpecification(specification, !!services.lifecycle)
     if (saved) {
       this.data = lifeCheckpointSchema.parse(saved)
       const expected = specification.town.facilities
-      if (this.data.world.facilities.length !== expected.length || this.data.world.actors.length !== population.npcs.length) throw new LifeRuleError('保存済み世界と承認仕様の人数・施設数が一致しません')
-      if (new Set(this.data.world.facilities.map(f => f.id)).size !== expected.length || new Set(this.data.world.actors.map(a => a.id)).size !== population.npcs.length) throw new LifeRuleError('保存済み世界の施設IDまたはNPC IDが重複しています')
+      const people = this.data.world.lifecycle?.residents ?? population.npcs
+      if (!!this.data.world.lifecycle !== !!services.lifecycle) throw new LifeRuleError('保存済み生活versionとサービスが一致しません')
+      if (this.data.world.facilities.length !== expected.length || this.data.world.actors.length !== people.length) throw new LifeRuleError('保存済み世界と承認仕様の人数・施設数が一致しません')
+      if (new Set(this.data.world.facilities.map(f => f.id)).size !== expected.length || new Set(this.data.world.actors.map(a => a.id)).size !== people.length) throw new LifeRuleError('保存済み世界の施設IDまたはNPC IDが重複しています')
       for (const f of this.data.world.facilities) {
         const source = expected.find(v => v.id === f.id && v.locationId === f.locationId)
-        if (!source || JSON.stringify(source.dimensions) !== JSON.stringify(f.dimensions)) throw new LifeRuleError(`保存済み施設と承認仕様が一致しません: ${f.id}`)
-        if (f.layout) validateLayout(f, f.layout, households(population).map(h => h.id))
+        if (!source || (this.data.world.lifecycle && f.type === 'residential' ? (['x', 'y', 'z'] as const).some(axis => f.dimensions[axis] < source.dimensions![axis]) : JSON.stringify(source.dimensions) !== JSON.stringify(f.dimensions))) throw new LifeRuleError(`保存済み施設と承認仕様が一致しません: ${f.id}`)
+        if (f.layout) validateLayout(f, f.layout, this.data.world.lifecycle ? f.layout.homes.map(h => h.householdId) : households(population).map(h => h.id))
       }
       for (const a of this.data.world.actors) {
-        if (!population.npcs.some(n => n.id === a.id && n.householdId === a.householdId)) throw new LifeRuleError(`保存済みNPCが初期人口と一致しません: ${a.id}`)
+        if (!people.some(n => n.id === a.id && n.householdId === a.householdId)) throw new LifeRuleError(`保存済みNPCが初期人口と一致しません: ${a.id}`)
         if (a.position && !validPosition(this.facility(this.data, a.locationId).dimensions, a.position)) throw new LifeRuleError(`保存済み座標が不正です: ${a.id}`)
       }
       if (!['ready', 'ended'].includes(this.data.world.stage)) this.data.world.stage = 'paused'
@@ -80,7 +87,7 @@ export class LifeHarness {
       const facilities = specification.town.facilities.map(f => ({ id: f.id, locationId: f.locationId, name: f.name, type: f.type, dimensions: f.dimensions!, layout: null }))
       for (const n of population.npcs) if (!facilities.some(f => f.locationId === n.locationId)) throw new LifeRuleError(`NPCの初期位置に施設がありません: ${n.id}/${n.locationId}`)
       this.data = {
-        world: { version: 1, revision: 0, stage: 'initializing', phase: 'facilities', turn: 0, day: 1, time: 'morning', step: false, facilities,
+        world: { ...(services.lifecycle ? { lifecycle: initializeLifecycle(population, services.lifecycle.seed) } : {}), version: 1, revision: 0, stage: 'initializing', phase: 'facilities', turn: 0, day: 1, time: 'morning', step: false, facilities,
           actors: population.npcs.map(n => ({ id: n.id, name: n.name, householdId: n.householdId, locationId: n.locationId, position: null, activity: 'entering', nextFacilityId: null, wakeAt: null, compact: 'none' })), events: [], error: null },
         jobs: [], active: {}, interactions: [], receipts: {}, terminalInputs: {}, terminalWrites: {}
       }
@@ -96,15 +103,18 @@ export class LifeHarness {
       this.data.world.events = this.data.world.events.slice(-200)
     }
     if (saved && services.cognition && !this.data.cognition) throw new LifeRuleError('記憶対応ワールドの保存済み記憶状態がありません')
-    this.cognition = services.cognition ? new NpcMemoryStore(services.cognition.runId, population.npcs.map(n => n.id), this.data.cognition, this.data.memoryArchive) : null
+    this.cognition = services.cognition ? new NpcMemoryStore(services.cognition.runId, this.people().map(n => n.id), this.data.cognition, this.data.memoryArchive) : null
     if (this.data.cognition && !this.cognition) throw new LifeRuleError('保存済みの記憶機能に対応するサービスがありません')
     delete this.data.cognition; delete this.data.memoryArchive
   }
+  people(): NpcInitialization[] { return this.data.world.lifecycle?.residents ?? this.population.npcs }
+  isDead(id: string): boolean { return this.data.world.actors.some(a => a.id === id && a.activity === 'dead') }
+  memoryRecords(id: string) { return this.cognition ? structuredClone(this.cognition.owner(id).records) : [] }
   snapshot(): SimulationSnapshot { return structuredClone(this.data.world) }
   checkpoint(): LifeCheckpoint { return { ...structuredClone(this.data), ...(this.cognition ? { cognition: this.cognition.snapshot() } : {}) } }
   memoryInspection(id: string) { if (!this.cognition) throw new LifeRuleError('このワールドは記憶機能の対象外です'); return this.cognition.inspect(id) }
   memoryDetail(id: string, memoryId: string, revision: number) { if (!this.cognition) throw new LifeRuleError('このワールドは記憶機能の対象外です'); return this.cognition.detail(id, memoryId, revision) }
-  memoryRelations() { return this.cognition ? this.population.npcs.flatMap(n => this.cognition!.owner(n.id).relations) : null }
+  memoryRelations() { return this.cognition ? this.people().flatMap(n => this.cognition!.owner(n.id).relations) : null }
   private actor(d: LifeCheckpoint, id: string): LifeActor {
     const actor = d.world.actors.find(a => a.id === id)
     if (!actor) throw new LifeRuleError(`NPCが見つかりません: ${id}`)
@@ -183,7 +193,7 @@ export class LifeHarness {
     return job
   }
   private quiet(d: LifeCheckpoint): boolean {
-    return !this.recallTasks.size && !Object.keys(d.active).length && !Object.keys(d.terminalWrites).length && !d.jobs.some(j => ['queued', 'requested', 'running'].includes(j.status)) && !d.interactions.some(i => !i.done)
+    return !d.world.lifecycle?.births.some(b => b.status === 'requested') && !this.recallTasks.size && !Object.keys(d.active).length && !Object.keys(d.terminalWrites).length && !d.jobs.some(j => ['queued', 'requested', 'running'].includes(j.status)) && !d.interactions.some(i => !i.done)
   }
   private situation(d: LifeCheckpoint, id: string) {
     const actor = this.actor(d, id)
@@ -191,8 +201,9 @@ export class LifeHarness {
     const residential = d.world.facilities.find(f => f.type === 'residential')!
     return { turn: d.world.turn, day: d.world.day, time: d.world.time, phase: d.world.phase, self: actor,
       facility, currentRegions: facility.layout?.regions.filter(region => actor.position && contains(region.bounds, actor.position)),
+      ...(d.world.lifecycle ? { identity: resident(d.world.lifecycle, id), marriageProposals: d.world.lifecycle.proposals.filter(p => p.actorId === id || p.partnerId === id), homeRequests: d.world.lifecycle.homes.filter(h => h.sponsorId === id || h.members.includes(id)), birthPlans: d.world.lifecycle.births.filter(b => b.parents.includes(id)) } : {}),
       home: residential.layout?.homes.find(h => h.householdId === actor.householdId), homeLocationId: residential.locationId,
-      npcs: d.world.actors.filter(a => a.locationId === actor.locationId).map(a => ({ id: a.id, name: a.name, position: a.position, activity: a.activity })),
+      npcs: d.world.actors.filter(a => a.activity !== 'dead' && a.locationId === actor.locationId).map(a => ({ id: a.id, name: a.name, position: a.position, activity: a.activity })),
       destinations: d.world.facilities.map(f => ({ id: f.id, name: f.name, locationId: f.locationId })),
       ...(this.cognition ? { memorySources: this.cognition.availableSources(id), memoryProgress: this.cognition.progress(id) } : {}) }
   }
@@ -208,7 +219,7 @@ export class LifeHarness {
     this.services.changed(this.snapshot())
     await this.update(d => {
       if (d.jobs.length) throw new LifeRuleError('初期化は既に開始されています')
-      if (this.cognition) for (const npc of this.population.npcs) this.memoryChanges.push(this.cognition.source(npc.id, `initial:${npc.id}`, 0, JSON.stringify(npc), 'initial'))
+      if (this.cognition) for (const npc of this.people()) this.memoryChanges.push(this.cognition.source(npc.id, `initial:${npc.id}`, 0, JSON.stringify(npc), 'initial'))
       this.enqueueMissingInitialization(d)
     })
   }
@@ -218,8 +229,8 @@ export class LifeHarness {
       const id = `facility-${f.id}`
       if (!f.layout && !pending(id)) this.enqueue(d, id, 'layout', `施設初期化です。initializeFacilityで領域を確定したら応答を終了してください。施設のサイズは変更できません。\n${JSON.stringify({ facility: f, households: f.type === 'residential' ? households(this.population) : [], bounds: 'min/maxは両端を含む整数座標。家同士の範囲は重複不可。全世帯に1軒ずつ必要。' })}`)
     }
-    if (['positions', 'entry'].includes(d.world.phase)) for (const a of d.world.actors) {
-      if (!a.position && !pending(a.id)) this.enqueue(d, a.id, 'position', `入場位置の設定を再開します。setInitialPositionで選び、応答を終了してください。\n${JSON.stringify(this.situation(d, a.id))}`)
+    if (['positions', 'entry'].includes(d.world.phase) || (d.world.lifecycle && d.world.phase === 'between')) for (const a of d.world.actors) {
+      if (a.activity !== 'dead' && !a.position && !pending(a.id)) this.enqueue(d, a.id, 'position', `入場位置の設定を再開します。setInitialPositionで選び、応答を終了してください。\n${JSON.stringify(this.situation(d, a.id))}`)
     }
   }
   private enterNextTurn(d: LifeCheckpoint): void {
@@ -228,11 +239,13 @@ export class LifeHarness {
     d.world.time = (['morning', 'noon', 'evening', 'night'] as const)[(d.world.turn - 1) % 4]
     d.world.phase = 'entry'
     for (const actor of d.world.actors) {
+      if (actor.activity === 'dead') continue
       if (actor.activity === 'sleeping') this.event(d, actor, 'wake', '起床しました')
       actor.activity = 'active'; actor.wakeAt = null; actor.compact = 'none'
       if (actor.nextFacilityId) {
         const destination = d.world.facilities.find(f => f.id === actor.nextFacilityId)!
         actor.locationId = destination.locationId; actor.position = null; actor.activity = 'entering'; actor.nextFacilityId = null
+        if (d.world.lifecycle) resident(d.world.lifecycle, actor.id).locationId = destination.locationId
         this.enqueue(d, actor.id, 'position', `新しいターンの入場位置をsetInitialPositionで選び、応答を終了してください。生活開始は全員の入場位置確定後です。\n${JSON.stringify(this.situation(d, actor.id))}`)
       }
     }
@@ -250,7 +263,7 @@ export class LifeHarness {
     await Promise.all(Object.entries(this.data.active).flatMap(([id, active]) => active.turnId ? [this.services.interrupt(id, active.turnId)] : []))
   }
   async resume(step = false): Promise<void> {
-    if (this.cognition) for (const npc of this.population.npcs) {
+    if (this.cognition) for (const npc of this.people()) {
       const owner = this.cognition.owner(npc.id)
       if (owner.recalls.some(r => r.status === 'failed') || owner.consolidation === 'failed') throw new LifeRuleError(`中断した記憶操作は自動再送しません: ${npc.id}`)
     }
@@ -261,18 +274,20 @@ export class LifeHarness {
       if (!['paused', 'error'].includes(d.world.stage)) throw new LifeRuleError('世界は停止中ではありません')
       d.world.error = null; d.world.step = step
       d.world.stage = d.world.turn === 0 ? 'initializing' : 'running'
-      if (this.cognition) for (const npc of this.population.npcs) if (this.cognition.owner(npc.id).consolidation === 'interrupted') this.memoryChanges.push(this.cognition.prepare(npc.id, owner => { owner.consolidation = 'pending' }))
+      if (this.cognition) for (const npc of this.people()) if (this.cognition.owner(npc.id).consolidation === 'interrupted') this.memoryChanges.push(this.cognition.prepare(npc.id, owner => { owner.consolidation = 'pending' }))
       this.enqueueMissingInitialization(d)
       for (const facility of d.world.facilities) {
         const id = `facility-${facility.id}`
         const unanswered = d.interactions.filter(i => i.facilityId === facility.id && !i.done)
         if (unanswered.length && !d.active[id] && !d.jobs.some(j => j.agentId === id && ['queued', 'requested', 'running'].includes(j.status))) this.enqueue(d, id, 'facility', `中断した施設利用への回答を再開してください。確定済みの回答は再送しません。\n${JSON.stringify(unanswered)}`)
       }
-      if (d.world.phase === 'between') this.enterNextTurn(d)
+      if (d.world.lifecycle) this.requestHomes(d)
+      if (d.world.phase === 'between' && (!d.world.lifecycle || (this.quiet(d) && !d.world.lifecycle.births.some(b => b.status === 'scheduled' && b.dueDay <= d.world.lifecycle!.processedDay)))) this.enterNextTurn(d)
     })
   }
   private async reconcile(): Promise<void> {
-    if (this.cognition) for (const npc of this.population.npcs) {
+    if (this.data.world.lifecycle?.births.some(b => b.status === 'requested')) throw new LifeRuleError('新生児生成の結果が未確定です。自動再送しません')
+    if (this.cognition) for (const npc of this.people()) {
       const owner = this.cognition.owner(npc.id)
       if (owner.recalls.some(r => ['requested', 'running', 'uncertain'].includes(r.status)) || owner.consolidation === 'running') throw new LifeRuleError(`記憶操作が未確定です。自動再送しません: ${npc.id}`)
     }
@@ -321,19 +336,122 @@ export class LifeHarness {
       d.world.phase = 'positions'
       for (const actor of d.world.actors) this.enqueue(d, actor.id, 'position', `turn=0の初期位置をsetInitialPositionで選び、応答を終了してください。生活はまだ開始しません。\n${JSON.stringify(this.situation(d, actor.id))}`)
     } else if (d.world.phase === 'positions' && this.quiet(d)) {
-      if (d.world.actors.some(a => !a.position)) throw new LifeRuleError('初期位置が未設定のNPCがいます')
+      if (d.world.actors.some(a => a.activity !== 'dead' && !a.position)) throw new LifeRuleError('初期位置が未設定のNPCがいます')
       d.world.stage = 'ready'; d.world.phase = 'between'
     } else if (d.world.phase === 'entry' && this.quiet(d)) {
-      if (d.world.actors.some(a => !a.position)) throw new LifeRuleError('入場位置が未設定のNPCがいます')
+      if (d.world.actors.some(a => a.activity !== 'dead' && !a.position)) throw new LifeRuleError('入場位置が未設定のNPCがいます')
       d.world.phase = 'activity'
-      for (const a of d.world.actors) a.activity = 'active'
+      for (const a of d.world.actors) if (a.activity !== 'dead') a.activity = 'active'
       for (const j of d.jobs) if (j.status === 'deferred') j.status = 'queued'
-    } else if (d.world.phase === 'activity' && this.quiet(d) && d.world.actors.every(a => a.activity === 'ended' || (a.activity === 'sleeping' && a.compact === 'complete'))) {
+    } else if (d.world.phase === 'activity' && this.quiet(d) && d.world.actors.every(a => a.activity === 'dead' || a.activity === 'ended' || (a.activity === 'sleeping' && a.compact === 'complete'))) {
       d.world.phase = 'between'
+      if (d.world.lifecycle) { this.lifecycleBoundary(d); return }
       if (d.world.turn >= this.specification.simulation.maxTurns) { d.world.stage = 'ended'; d.world.phase = 'complete' }
       else if (d.world.step) d.world.stage = 'paused'
       else this.enterNextTurn(d)
+    } else if (d.world.lifecycle && d.world.phase === 'between' && d.world.stage === 'running' && this.quiet(d)) this.lifecycleBoundary(d)
+  }
+  private lifecycleBoundary(d: LifeCheckpoint): void {
+    const state = d.world.lifecycle!
+    if (d.world.turn % 4 === 0) for (const dead of ageDay(state, d.world.turn)) {
+      const actor = this.actor(d, dead.id)
+      actor.activity = 'dead'; actor.position = null; actor.nextFacilityId = null; actor.wakeAt = null; actor.compact = 'none'
+      delete d.terminalInputs[dead.id]
+      for (const job of d.jobs) if (job.agentId === dead.id && job.status === 'deferred') job.status = 'discarded'
+      const recipients = state.residents.filter(n => n.diedTurn === null && (n.family.some(f => f.npcId === dead.id) || this.actor(d, n.id).locationId === actor.locationId)).map(n => n.id)
+      const event = this.event(d, actor, 'death', `${dead.name}が${dead.age}歳で老衰しました`, recipients)
+      for (const id of recipients) this.enqueue(d, id, 'notice', `${JSON.stringify({ kind: 'deathNotice', eventId: event.sequence, text: event.text })}\n日次境界の通知です。必要ならremember・remindMeで自分の記憶を登録し、推論を終了してください。生活行動は次ターンまで待ってください。`)
+      for (const home of state.homes) if (['consent', 'building'].includes(home.status) && (home.sponsorId === dead.id || home.members.includes(dead.id))) { home.status = 'cancelled'; home.reason = '申請者または入居者が死亡しました' }
     }
+    if (!this.quiet(d) || state.births.some(b => b.status === 'scheduled' && b.dueDay <= state.processedDay)) return
+    state.endReason = endReason(state, this.specification.simulation.endCondition, d.world.turn, this.specification.simulation.maxTurns)
+    if (state.endReason) { d.world.stage = 'ended'; d.world.phase = 'complete' }
+    else if (d.world.step) d.world.stage = 'paused'
+    else this.enterNextTurn(d)
+  }
+  private async spawnBirth(birth: Birth): Promise<void> {
+    const state = this.data.world.lifecycle!
+    const parents = birth.parents.map(id => structuredClone(resident(state, id)))
+    const input = await this.services.lifecycle!.birth(birth, parents, this.data.world.turn)
+    const npc = identitySchema.parse(input)
+    await this.update(d => {
+      const current = d.world.lifecycle!, request = current.births.find(b => b.id === birth.id)!
+      if (request.status !== 'requested') throw new LifeRuleError(`出生処理の状態が不正です: ${birth.id}`)
+      if (npc.age !== 0 || current.residents.some(n => n.id === npc.id) || npc.householdId !== resident(current, birth.homeParentId).householdId || !birth.parents.every(id => npc.family.some(f => f.npcId === id && f.relation === 'parent'))) throw new LifeRuleError(`新生児の初期情報が不正です: ${birth.id}`)
+      const residential = d.world.facilities.find(f => f.type === 'residential')!
+      if (npc.locationId !== residential.locationId) throw new LifeRuleError('新生児の所在地は住宅街にしてください')
+      const child: Resident = { ...npc, sexCategory: npc.sex === '男性' || npc.sex === 'male' ? 'male' : npc.sex === '女性' || npc.sex === 'female' ? 'female' : 'other', generation: Math.max(...parents.map(n => n.generation)) + 1, bornTurn: d.world.turn, diedTurn: null }
+      for (const sibling of current.residents.filter(n => n.family.some(f => f.relation === 'parent' && birth.parents.includes(f.npcId)))) {
+        if (!child.family.some(f => f.npcId === sibling.id)) child.family.push({ npcId: sibling.id, relation: 'sibling' })
+        sibling.family.push({ npcId: child.id, relation: 'sibling' })
+      }
+      for (const id of birth.parents) resident(current, id).family.push({ npcId: child.id, relation: 'child' })
+      current.residents.push(child)
+      const actor: LifeActor = { id: child.id, name: child.name, householdId: child.householdId, locationId: child.locationId, position: null, activity: 'entering', nextFacilityId: null, wakeAt: null, compact: 'none' }
+      d.world.actors.push(actor)
+      if (this.cognition) this.memoryChanges.push(this.cognition.addOwner(child.id))
+      request.status = 'complete'; request.childId = child.id
+      this.enqueue(d, actor.id, 'position', `出生しました。現在turn=${d.world.turn}です。住宅街の家にsetInitialPositionで位置を選び、応答を終了してください。\n${JSON.stringify({ identity: child, facility: residential })}`)
+    })
+    await this.update(d => {
+      const child = this.actor(d, npc.id)
+      if (this.cognition) this.memoryChanges.push(this.cognition.source(npc.id, `initial:${npc.id}`, d.world.turn, JSON.stringify(npc), 'initial'))
+      this.event(d, child, 'birth', `${npc.name}が生まれました`, birth.parents)
+      for (const id of birth.parents) this.enqueue(d, id, 'notice', `${JSON.stringify({ kind: 'birthNotice', child: npc })}\n日次境界の通知です。必要ならremember・remindMeで自分の記憶を登録し、推論を終了してください。生活行動は次ターンまで待ってください。`)
+    })
+  }
+  private familyTool(d: LifeCheckpoint, actorId: string, tool: string, input: unknown): ToolResult {
+    const state = d.world.lifecycle!, actor = this.actor(d, actorId)
+    if (tool === 'marry') {
+      const result = marry(state, actorId, input)
+      if (result.status === 'married') this.event(d, actor, 'marriage', `結婚・家族計画が成立しました: ${JSON.stringify(result)}`)
+      return reply(result)
+    }
+    if (tool === 'createHome') {
+      const value = lifecycleToolSchemas.createHome.parse(input)
+      if (living(state, actorId).age < 18) throw new LifeRuleError('新居の申請者は18歳以上にしてください')
+      if (new Set(value.members).size !== value.members.length) throw new LifeRuleError('入居者が重複しています')
+      for (const id of value.members) {
+        living(state, id)
+        if (state.homes.some(h => ['consent', 'building'].includes(h.status) && h.members.includes(id))) throw new LifeRuleError(`入居申請が競合しています: ${id}`)
+      }
+      const id = `home-${state.homes.length + 1}-${unique().slice(0, 8)}`
+      state.homes.push({ id, sponsorId: actorId, members: value.members, accepted: value.members.filter(id => id === actorId || resident(state, id).age < 18), description: value.description, status: 'consent', householdId: `household-${id}`, reason: null })
+      for (const id of value.members.filter(id => id !== actorId && resident(state, id).age >= 18)) this.enqueue(d, id, 'reply', `新居への入居申請があります。consentHomeで自分の意思を回答してください。${JSON.stringify(state.homes.at(-1))}`, this.actor(d, id).activity === 'sleeping')
+      this.requestHomes(d)
+      return reply({ requestId: id })
+    }
+    const value = lifecycleToolSchemas.consentHome.parse(input), home = state.homes.find(h => h.id === value.requestId)
+    if (!home || home.status !== 'consent' || !home.members.includes(actorId)) throw new LifeRuleError('自分の未成立入居申請がありません')
+    if (!value.accept) { home.status = 'cancelled'; home.reason = `${actorId}が入居を辞退しました` }
+    else if (!home.accepted.includes(actorId)) home.accepted.push(actorId)
+    this.requestHomes(d)
+    return reply({ requestId: home.id, status: home.status })
+  }
+  private requestHomes(d: LifeCheckpoint): void {
+    const facility = d.world.facilities.find(f => f.type === 'residential')!
+    for (const home of d.world.lifecycle!.homes) if ((home.status === 'consent' && home.members.every(id => home.accepted.includes(id))) || (home.status === 'building' && !d.jobs.some(j => j.homeRequestId === home.id && !['done', 'discarded'].includes(j.status)))) {
+      home.status = 'building'
+      this.enqueue(d, `facility-${facility.id}`, 'home', `新居申請をcompleteHomeで完成させてください。既存領域を移動せず、必要なら住宅街のdimensionsを拡張できます。\n${JSON.stringify({ request: home, facility })}`)
+      d.jobs[d.jobs.length - 1].homeRequestId = home.id
+    }
+  }
+  private completeHome(d: LifeCheckpoint, agentId: string, input: unknown): ToolResult {
+    const value = lifecycleToolSchemas.completeHome.parse(input), state = d.world.lifecycle!
+    const facility = d.world.facilities.find(f => `facility-${f.id}` === agentId && f.type === 'residential')
+    const request = state.homes.find(h => h.id === value.requestId && h.status === 'building')
+    if (!facility?.layout || !request) throw new LifeRuleError('住宅街の実行中の建築依頼だけを完了できます')
+    for (const id of [request.sponsorId, ...request.members]) living(state, id)
+    if ((['x', 'y', 'z'] as const).some(axis => value.dimensions[axis] < facility.dimensions[axis] || value.bounds.min[axis] > value.bounds.max[axis]) || !validPosition(value.dimensions, value.bounds.min) || !validPosition(value.dimensions, value.bounds.max)) throw new LifeRuleError('新居の座標または住宅街の拡張サイズが不正です')
+    if (facility.layout.homes.some(h => overlaps(h.bounds, value.bounds))) throw new LifeRuleError('新居が既存の家と重複しています')
+    const previousDimensions = facility.dimensions
+    facility.dimensions = value.dimensions
+    facility.layout.homes.push({ id: request.id, householdId: request.householdId, name: value.name, description: value.description, bounds: value.bounds })
+    for (const id of request.members) { resident(state, id).householdId = request.householdId; this.actor(d, id).householdId = request.householdId }
+    request.status = 'complete'
+    this.event(d, this.actor(d, request.sponsorId), 'home', `新居「${value.name}」が完成しました。${JSON.stringify({ requestId: request.id, bounds: value.bounds, previousDimensions, dimensions: value.dimensions })}`, request.members)
+    for (const id of request.members) this.enqueue(d, id, 'reply', `新居「${value.name}」が完成し、所属世帯が変わりました。物理的な移動は自分で行ってください。`, this.actor(d, id).activity === 'sleeping')
+    return reply({ requestId: request.id, householdId: request.householdId })
   }
   private async drive(): Promise<void> {
     const actions = await this.update(d => {
@@ -374,6 +492,13 @@ export class LifeHarness {
       }
       return actions
     })
+    const births = await this.update(d => {
+      if (!d.world.lifecycle || d.world.stage !== 'running' || d.world.phase !== 'between') return []
+      const due = d.world.lifecycle.births.filter(b => b.status === 'scheduled' && b.dueDay <= d.world.lifecycle!.processedDay)
+      for (const b of due) b.status = 'requested'
+      return plainLifeValue(due)
+    })
+    for (const birth of births) this.track(this.spawnBirth(birth).catch(error => this.fail(error)))
     for (const action of actions) this.track(this.dispatch(action.job, action.activeTurn, action.steer).catch(error => this.fail(error)))
     const writes = await this.update(d => {
       if (d.world.phase !== 'activity' || d.world.stage !== 'running') return []
@@ -439,12 +564,12 @@ export class LifeHarness {
       } else if (method === 'item/completed') {
         const value = z.object({ item: z.object({ type: z.string(), clientId: z.string().nullable().optional() }) }).parse(params)
         if (value.item.type === 'contextCompaction' && d.active[agentId]?.kind === 'compact') d.active[agentId].compactSeen = true
-        if (value.item.type === 'userMessage' && d.world.phase === 'activity') {
+        if (value.item.type === 'userMessage' && ['activity', 'between'].includes(d.world.phase)) {
           const actor = d.world.actors.find(a => a.id === agentId)
           const delivered = d.jobs.find(j => j.id === value.item.clientId && j.agentId === agentId)
-          if (this.cognition && actor && delivered && ['message', 'reply'].includes(delivered.kind)) this.memoryChanges.push(this.cognition.source(agentId, `delivery:${delivered.id}`, d.world.turn, delivered.text, 'received'))
+          if (this.cognition && actor && delivered && ['message', 'reply', 'notice'].includes(delivered.kind)) this.memoryChanges.push(this.cognition.source(agentId, `delivery:${delivered.id}`, d.world.turn, delivered.text, 'received'))
           const kind = d.jobs.find(j => j.id === value.item.clientId)?.kind ?? (value.item.clientId ? this.completedKinds.get(value.item.clientId) : undefined)
-          if (actor?.activity === 'ended' && (!kind || ['message', 'reply', 'user'].includes(kind))) actor.activity = 'active'
+          if (d.world.phase === 'activity' && actor?.activity === 'ended' && (!kind || ['message', 'reply', 'user'].includes(kind))) actor.activity = 'active'
         }
       } else if (method === 'turn/completed') {
         const { turn } = z.object({ turn: z.object({ id: z.string(), status: z.string(), error: z.object({ message: z.string() }).nullable().optional() }) }).parse(params)
@@ -475,6 +600,7 @@ export class LifeHarness {
           const rejected = jobs.find(j => j.kind === 'consolidation' && j.consolidationError !== undefined)
           return stop(rejected ? `記憶整理Toolの検証に失敗したまま推論が終了しました: ${agentId}/${turn.id}: ${rejected.consolidationError}` : `記憶整理Toolが実行されていません: ${agentId}/${turn.id}`)
         }
+        if (jobs.some(j => j.kind === 'home' && d.world.lifecycle?.homes.some(h => h.id === j.homeRequestId && h.status === 'building'))) return stop(`新居作成Toolが完了していません: ${agentId}`)
         if (jobs.some(j => j.kind === 'layout') && !d.world.facilities.find(f => `facility-${f.id}` === agentId)?.layout) return stop(`施設初期化Toolが実行されていません: ${agentId}`)
         if (jobs.some(j => j.kind === 'position') && !this.actor(d, agentId).position) return stop(`初期位置Toolが実行されていません: ${agentId}`)
         if (jobs.some(j => j.kind === 'facility') && d.interactions.some(i => `facility-${i.facilityId}` === agentId && !i.done)) this.enqueue(d, agentId, 'facility', `未回答の利用要求へcompleteFacilityUseで回答してください。\n${JSON.stringify(d.interactions.filter(i => `facility-${i.facilityId}` === agentId && !i.done))}`)
@@ -483,6 +609,7 @@ export class LifeHarness {
   }
   async bufferTerminal(agentId: string, text: string): Promise<boolean> {
     const actor = this.data.world.actors.find(a => a.id === agentId)
+    if (actor?.activity === 'dead') throw new LifeRuleError(`死亡した住民へ入力できません: ${agentId}`)
     if (!actor || (actor.activity !== 'sleeping' && actor.compact !== 'running')) return false
     await this.update(d => { d.terminalInputs[agentId] = (d.terminalInputs[agentId] ?? '') + text })
     return true
@@ -494,7 +621,7 @@ export class LifeHarness {
       const r = record.reminder
       return r?.status === 'pending' && r.notifiedTurn !== d.world.turn && (r.afterTurn === null || d.world.turn >= r.afterTurn) &&
         (r.facilityId === null || this.facility(d, actor.locationId).id === r.facilityId) &&
-        (r.personId === null || d.world.actors.some(a => a.id === r.personId && a.locationId === actor.locationId))
+        (r.personId === null || d.world.actors.some(a => a.id === r.personId && a.activity !== 'dead' && a.locationId === actor.locationId))
     })
     if (!eligible.length) return []
     const recalled: MemoryRecord[] = []
@@ -624,7 +751,7 @@ export class LifeHarness {
       }
       let result: ToolResult
       try {
-        if (!Object.hasOwn(lifeToolSchemas, call.tool) && !(this.cognition && Object.hasOwn(memoryToolSchemas, call.tool))) throw new LifeRuleError(`未対応の生活Toolです: ${call.tool}`)
+        if (!Object.hasOwn(lifeToolSchemas, call.tool) && !(d.world.lifecycle && Object.hasOwn(lifecycleToolSchemas, call.tool)) && !(this.cognition && Object.hasOwn(memoryToolSchemas, call.tool))) throw new LifeRuleError(`未対応の生活Toolです: ${call.tool}`)
         if (call.tool !== 'getSituation' && !['initializing', 'running'].includes(d.world.stage)) throw new LifeRuleError(`世界が実行中ではありません: ${d.world.stage}`)
         const active = d.active[agentId]
         if (!active || active.turnId !== call.turnId) throw new LifeRuleError(`現在の推論とTool要求が一致しません: ${agentId}/${call.turnId}`)
@@ -644,6 +771,7 @@ export class LifeHarness {
     })
   }
   private applyTool(d: LifeCheckpoint, agentId: string, tool: string, input: unknown): ToolResult {
+    if (tool === 'completeHome' && d.world.lifecycle) return this.completeHome(d, agentId, input)
     if (tool === 'initializeFacility') {
       const facility = d.world.facilities.find(f => `facility-${f.id}` === agentId)
       if (!facility || d.world.phase !== 'facilities' || facility.layout) throw new LifeRuleError('施設の初期化時だけ実行できます')
@@ -664,22 +792,26 @@ export class LifeHarness {
       return reply({ delivered: request.id })
     }
     const actor = this.actor(d, agentId)
+    if (actor.activity === 'dead') throw new LifeRuleError(`死亡した住民は行動できません: ${agentId}`)
     const facility = this.facility(d, actor.locationId)
     if (tool === 'consolidateMemory' && this.cognition) {
       if (actor.activity !== 'sleeping' || !d.jobs.some(j => j.agentId === agentId && j.kind === 'consolidation' && ['requested', 'running'].includes(j.status))) throw new LifeRuleError('睡眠時の記憶整理だけで使えます')
       this.memoryChanges.push(this.cognition.consolidate(agentId, d.world.turn, input, d.world.actors.map(a => a.id)))
       return reply({ consolidated: true, instruction: 'この推論を終了してください。その後にCompactを実行します。' })
     }
-    if (this.cognition && actor.activity === 'sleeping') throw new LifeRuleError('睡眠・記憶整理中は生活行動を受け付けません')
+    const boundaryNotice = d.world.phase === 'between' && d.jobs.some(j => j.agentId === agentId && j.kind === 'notice' && ['requested', 'running'].includes(j.status))
+    if (this.cognition && actor.activity === 'sleeping' && !boundaryNotice) throw new LifeRuleError('睡眠・記憶整理中は生活行動を受け付けません')
     if (tool === 'getSituation') { lifeToolSchemas.getSituation.parse(input); return reply(this.situation(d, agentId)) }
     if (tool === 'setInitialPosition') {
       const value = lifeToolSchemas.setInitialPosition.parse(input)
-      if (!['positions', 'entry'].includes(d.world.phase) || actor.position || !validPosition(facility.dimensions, value.position)) throw new LifeRuleError('初期位置の設定段階または座標が不正です')
+      if (!['positions', 'entry', 'between'].includes(d.world.phase) || actor.position || !validPosition(facility.dimensions, value.position)) throw new LifeRuleError('初期位置の設定段階または座標が不正です')
+      if (d.world.lifecycle && d.world.phase === 'between' && !facility.layout?.homes.some(h => h.householdId === actor.householdId && contains(h.bounds, value.position))) throw new LifeRuleError('新生児の初期位置は所属世帯の住宅内にしてください')
       actor.position = value.position; actor.activity = 'ended'
       this.event(d, actor, 'entry', '初期位置を選びました')
       return reply({ position: actor.position, instruction: '位置を確定しました。この推論を終了し、全員の位置確定後の生活開始通知を待ってください。' })
     }
-    if (d.world.phase !== 'activity' || actor.activity !== 'active') throw new LifeRuleError(`現在は行動できません: ${d.world.phase}/${actor.activity}`)
+    if (!(boundaryNotice && ['remember', 'remindMe'].includes(tool)) && (d.world.phase !== 'activity' || actor.activity !== 'active')) throw new LifeRuleError(`現在は行動できません: ${d.world.phase}/${actor.activity}`)
+    if (d.world.lifecycle && ['marry', 'createHome', 'consentHome'].includes(tool)) return this.familyTool(d, agentId, tool, input)
     switch (tool) {
       case 'remember': {
         const result = this.cognition!.remember(agentId, d.world.turn, input)
@@ -761,6 +893,7 @@ export class LifeHarness {
     await this.drain()
   }
   assertStopped(): void {
+    if (this.data.world.lifecycle?.births.some(b => b.status === 'requested')) throw new LifeRuleError('新生児生成の結果が未確定です')
     const pending = this.data.jobs.filter(job => ['requested', 'running'].includes(job.status)).map(job => `${job.agentId}/${job.id}`)
     if (Object.keys(this.data.active).length || Object.keys(this.data.terminalWrites).length || pending.length) throw new LifeRuleError(`停止後も未確定の生活操作があります: ${[...Object.keys(this.data.active), ...Object.keys(this.data.terminalWrites), ...pending].join(', ')}`)
   }

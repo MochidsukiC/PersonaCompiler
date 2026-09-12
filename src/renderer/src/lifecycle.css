@@ -1,0 +1,9 @@
+.lifecycle-panel { flex: 0 0 auto; max-height: 240px; overflow: auto; padding: 10px 16px; background: #151d19; border-bottom: 1px solid #304039; font-size: 12px; }
+.lifecycle-summary { display: flex; flex-wrap: wrap; gap: 12px; margin-bottom: 6px; }
+.lifecycle-panel details { margin-top: 6px; }
+.lifecycle-panel button { background: #24352d; color: #d3e2d7; border: 1px solid #42584b; border-radius: 5px; padding: 5px 9px; margin: 4px; cursor: pointer; }
+.lifecycle-panel button:disabled { opacity: .5; cursor: default; }
+.lifecycle-residents { display: flex; flex-wrap: wrap; }
+.lifecycle-residents small { display: block; margin-top: 3px; }
+.compilation-panel { margin-top: 10px; border-top: 1px solid #42584b; padding-top: 8px; }
+.compilation-panel [role=alert] { color: #f2b8ad; }

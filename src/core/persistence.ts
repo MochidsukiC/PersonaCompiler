@@ -6,6 +6,9 @@ export interface SavedBackend {
   version: 1
   lifeVersion?: 1
   memoryVersion?: 1
+  lifecycleVersion?: 1
+  compilation?: import('./compiler-contracts').Compilation
+  production?: import('./compiler-contracts').ProductionOperation
   authMode: 'chatgpt' | 'apiKey' | null
   settings: AgentModelSettings | null
   preparation: PreparationProgress

@@ -65,7 +65,7 @@ export function FacilityInterior({ facility, simulation, speech, onBack, onAgent
   const [maxZ, setMaxZ] = useState(facility.dimensions.z - 1)
   const [voice, setVoice] = useState<Voice>('medium')
   const [error, setError] = useState<string | null>(null)
-  const people = useMemo(() => simulation.actors.filter(a => a.locationId === facility.locationId), [simulation.actors, facility.locationId])
+  const people = useMemo(() => simulation.actors.filter(a => a.activity !== 'dead' && a.locationId === facility.locationId), [simulation.actors, facility.locationId])
   const selected = people.find(a => a.id === selectedId)
   const home = facility.layout?.homes.find(h => h.id === homeId)
   const recipients = selected?.position ? speechRecipients(facility, selected, people, voice) : []

@@ -58,6 +58,10 @@ export class NpcMemoryStore {
     }
   }
   owner(id: string): MemoryOwner { const value = this.state.owners[id]; if (!value) throw new LifeRuleError(`記憶を持つNPCが見つかりません: ${id}`); return value }
+  addOwner(id: string): MemoryMutation {
+    if (this.state.owners[id]) throw new LifeRuleError(`記憶の所有者が既に存在します: ${id}`)
+    return { ownerId: id, owner: blank(), archive: [] }
+  }
   snapshot(): MemorySnapshot { return structuredClone(this.state) }
   prepare(id: string, change: (owner: MemoryOwner, archive: MemoryArchive[]) => void): MemoryMutation {
     const owner = structuredClone(this.owner(id)), archive: MemoryArchive[] = []

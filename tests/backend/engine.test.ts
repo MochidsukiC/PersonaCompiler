@@ -15,7 +15,8 @@ class Runtime implements AgentRuntime {
   toolHandler: (call: RuntimeToolCall) => Promise<RuntimeToolResult> = async () => { throw new Error('No tool handler') }
   historyTurns = new Map<string, LifeHistoryTurn[]>()
   setToolHandler(handler: (call: RuntimeToolCall) => Promise<RuntimeToolResult>) { this.toolHandler = handler }
-  listener: (event: RpcNotification) => void = () => undefined
+  listeners = new Set<(event: RpcNotification) => void>()
+  listener = (event: RpcNotification) => { for (const listener of this.listeners) listener(event) }
   created: string[] = []
   instructions: string[] = []
   resumed: { agentId: string; threadId: string | null; instructions?: string }[] = []
@@ -23,7 +24,7 @@ class Runtime implements AgentRuntime {
   failCreation = false
   mode: 'chatgpt' | 'apiKey' = 'chatgpt'
   available = models
-  onNotification(listener: (event: RpcNotification) => void) { this.listener = listener; return () => { this.listener = () => undefined } }
+  onNotification(listener: (event: RpcNotification) => void) { this.listeners.add(listener); return () => { this.listeners.delete(listener) } }
   async connect(mode: 'chatgpt' | 'apiKey') { this.mode = mode }
   async account() { return { authenticated: true, mode: this.mode } }
   async models() { return this.available }
@@ -39,6 +40,15 @@ class Runtime implements AgentRuntime {
   async startTurn(binding: SessionBinding, text: string, _images?: string[], clientId?: string) {
     this.inputs.push(text)
     const id = `turn-${crypto.randomUUID()}`
+    if (binding.role === 'parent' && text.includes('Harnessの承認済み制作処理です')) {
+      const relative = text.match(/入力資料: (production\/[a-f0-9-]+\/input.json)/)![1]
+      const input = JSON.parse(await readFile(path.join(binding.cwd, relative), 'utf8'))
+      await writeFile(path.join(binding.cwd, relative.replace('input.json', 'result.json')), JSON.stringify({ npcId: input.identity.id, lifeSummary: [], personality: [], speechTendency: [], appearance: [], goals: [], behavior: [], schedule: [], runtimeGuidance: '', systemPrompt: '住民として応答する', memoryIds: [], relationshipTargets: [] }))
+      setTimeout(() => {
+        this.listener({ method: 'turn/started', params: { threadId: binding.threadId, turn: { id } } })
+        this.listener({ method: 'turn/completed', params: { threadId: binding.threadId, turn: { id, status: 'completed' } } })
+      }, 0)
+    }
     if (binding.role !== 'parent') {
       const history: LifeHistoryTurn = { id, status: 'inProgress', clientIds: clientId ? [clientId] : [], compact: false }
       const turns = this.historyTurns.get(binding.threadId!) ?? []

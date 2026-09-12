@@ -1,4 +1,5 @@
 import { z } from 'zod'
+import type { Compilation } from './compiler-contracts'
 import { mapSchema } from '../shared/contracts'
 import { dimensionsSchema, type SimulationSnapshot } from './life-contracts'
 
@@ -87,6 +88,7 @@ export type Population = z.infer<typeof populationSchema>
 export const sessionBindingSchema = z.object({
   agentId: z.string().regex(/^[a-zA-Z0-9][a-zA-Z0-9_-]{0,88}$/), sessionId: z.string().regex(/^[a-zA-Z0-9][a-zA-Z0-9_-]{0,88}$/), role: z.enum(['parent', 'npc', 'facility']),
   threadId: z.string().nullable(), cwd: z.string(), modelId: z.string(), effort: effortSchema,
+  lifecycleVersion: z.literal(1).optional(),
   creation: z.enum(['requested', 'created', 'initialized']), seedPersisted: z.boolean(), lifeToolsVersion: z.literal(1).optional(), persistenceVersion: z.literal(2).optional(), memoryVersion: z.literal(1).optional()
 })
 export type SessionBinding = z.infer<typeof sessionBindingSchema>
@@ -101,6 +103,7 @@ export const preparationProgressSchema = z.object({
 })
 export type PreparationProgress = z.infer<typeof preparationProgressSchema>
 export interface BackendSnapshot {
+  compilation?: Compilation
   persistence?: import('./persistence').PersistenceStatus
   connection: 'disconnected' | 'connecting' | 'connected' | 'error'
   authMode: 'chatgpt' | 'apiKey' | null
@@ -122,6 +125,7 @@ export const backendCommandSchema = z.discriminatedUnion('type', [
   z.object({ type: z.literal('revise'), revision: z.number().int(), message: z.string().min(1).max(50000) }),
   z.object({ type: z.literal('approve'), revision: z.number().int() }),
   z.object({ type: z.literal('retry') }),
+  z.object({ type: z.literal('recompile') }),
   z.object({ type: z.literal('startSimulation'), step: z.boolean() }),
   z.object({ type: z.literal('terminalReconnect'), sessionId: z.string().min(1).max(160) })
 ])

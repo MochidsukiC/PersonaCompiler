@@ -40,7 +40,7 @@ Windowsのnode-pty 1.1.0にはNode-APIの公式バイナリーが同梱されて
 
 ## 親システムプロンプト
 
-親の全体方針には、提供された `src/core/prompts/parent-system.md` のtextコードブロックを使用します。原文を保持し、`src/core/prompts.ts`で現行の準備フェーズ用規則とJSON Schemaを末尾に付けます。最初の質問ラウンド、Harnessによる承認・Session作成、turn=0での停止は維持します。生活進行は親から分離したCoreが担当し、総合出力形式は将来の実装対象です。新しい親Conversationの作成時、およびアプリ再起動後に保存済みのConversationへ接続するときに適用します。接続中のCLIだけを再接続してもbaseInstructionsは更新されないため、プロンプト変更後はアプリを再起動してください。既存のConversation ID・会話履歴・承認済み仕様は引き継ぎます。
+親の全体方針には、提供された `src/core/prompts/parent-system.md` のtextコードブロックを使用します。原文を保持し、`src/core/prompts.ts`で現行の準備フェーズ用規則とJSON Schemaを末尾に付けます。最初の質問ラウンド、Harnessによる承認・Session作成、turn=0での停止は維持します。生活進行は親から分離したCoreが担当し、新規ワールドではHarnessが出生時の初期条件生成と終了後のCharacter Compilationを親へ依頼します。新しい親Conversationの作成時、およびアプリ再起動後に保存済みのConversationへ接続するときに適用します。接続中のCLIだけを再接続してもbaseInstructionsは更新されないため、プロンプト変更後はアプリを再起動してください。既存のConversation ID・会話履歴・承認済み仕様は引き継ぎます。
 
 ## 主観的な記憶
 
@@ -108,7 +108,7 @@ Windowsのファイル置換では、一時的なdeny-delete共有ロックの�
 
 新方式の正常終了後は停止状態で復元し、Tool結果の索引で重複適用を防ぎます。異常終了でdirtyが残った実行は閲覧専用です。旧方式は未確定の推論・配信・Compactを履歴で照合し、確認できなければ対象を表示して停止します。以前の形式のワールドは閲覧でき、新しい生活形式への自動変換は行いません。
 
-出生・加齢・死亡、独自の記憶整理・想起、観測、Character Compilationは次段階です。家族以外の友人関係や人生経験を初期人口へ捏造しません。NPCのPromptProviderは差し替え可能で、人格Prompt研究は分離しています。
+新規ワールドは結婚・新居・出生・加齢・死亡・世代交代と、終了後の自動Character Compilationに対応します。4ターンで1歳加齢し、80歳以上で老衰します。終了条件と生存者のパッケージ生成、Tool・保存規則は [LIFECYCLE.md](LIFECYCLE.md) を参照してください。Minecraft Modとスキン画像生成は次段階です。家族以外の友人関係や人生経験を初期人口へ捏造しません。NPCのPromptProviderは差し替え可能で、人格Prompt研究は分離しています。
 
 ## 明示的なデモ
 

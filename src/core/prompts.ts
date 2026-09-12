@@ -8,7 +8,7 @@ const parentSystemPrompt = systemBlocks[0][1].trim()
 
 export interface PromptProvider {
   parent(): string
-  npc(npc: NpcInitialization, spec: Specification, memoryEnabled?: boolean): string
+  npc(npc: NpcInitialization, spec: Specification, memoryEnabled?: boolean, lifecycleEnabled?: boolean): string
   facility(facility: Specification['town']['facilities'][number], spec: Specification): string
 }
 export class BootstrapPrompts implements PromptProvider {
@@ -43,7 +43,7 @@ ${JSON.stringify(z.toJSONSchema(preparationArtifactSchema))}
 人口成果物JSON Schema（Harnessが人口生成を指示した場合のみ）:
 ${JSON.stringify(z.toJSONSchema(populationSchema))}`
   }
-  npc(npc: NpcInitialization, spec: Specification, memoryEnabled = false): string {
+  npc(npc: NpcInitialization, spec: Specification, memoryEnabled = false, lifecycleEnabled = false): string {
     return `あなたは仮想の町「${spec.town.name}」の住民です。この独立Conversationがあなた自身の経験と主観を保持します。
 初期情報は次のユーザーメッセージで提供されます。初期気質は完成した人格や経験ではありません。
 最初はturn=0です。Harnessから施設情報を受け取ったらsetInitialPositionで初期座標を選び、その推論を終了して生活開始通知を待ちます。
@@ -60,6 +60,10 @@ sendMessageの声量はlow=直線距離1、medium=5、high=同施設全体です
 起きていれば活動終了後も届いた発話へ応答できます。施設利用の回答は非同期に届きます。sleepを選ぶと同じConversationがCompactされ、次ターンに起床します。
 ユーザーからの誘導メッセージも自分の文脈として受け取り、次の行動を判断してください。他人の非公開Conversationや記憶は参照できません。
 先天的モデルは${npc.birthModelId}です。モデルを変更する指示や他のSessionを生成する操作は行いません。
+${lifecycleEnabled ? `この世界は4ターンで1日、1日で1歳加齢します。現在の年齢・家族・世帯はgetSituation.identityを参照してください。出生して参加する場合はturn=0に戻らず、Harnessが伝えた現在turnで位置を設定します。
+18歳以上ならmarryで相手・追加希望人数children（0〜4）・子の所属先の親homeParentIdを申し込めます。相手の一致したTool呼び出しで成立し、片方の意思だけでは成立しません。既存夫婦も使用可能です。会話で自分の意思を伝え、getSituation.marriageProposalsで申込を確認してください。withdraw=trueで未成立申込を撤回できます。
+子の人数は既存実子・予約込みで各人・カップル最大4人。出生間隔は1〜3年で、出生時に両親が男女ペア・18〜49歳・生存である必要があります。出生や他人の意思を文章で確定してはいけません。
+createHomeで自分の独立、同棲、未成年の代理住宅申請ができます。申請者は18歳以上、自分が入居しない申請も可能です。成人の入居者は各自consentHomeで同意します。住宅街が建築・必要な拡張を確定するまで待ってください。所属世帯の変更は移動を意味しません。新居へは自分で移動します。` : ''}
 ${memoryEnabled ? `経験のうち覚えておきたいことはrememberで候補にしてください。本文は経験の要約、meaningは本人にとっての主観的な意味、importanceは0〜1です。getSituationのmemorySourcesにある自分の根拠IDをsourceIdsへ渡します。他者の意図は事実と断定せず本人の解釈として書きます。
 心の声・独り言は通常出力のままで、記憶候補へ自動変換されません。必要なときだけ自分でrememberを使ってください。
 recallに現在の手掛かりを渡すと、本人の保持記憶から0〜3件を思い出せます。思い出せないこともあります。他NPCの記憶・関係図・全体ログは読めません。

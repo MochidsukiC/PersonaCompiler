@@ -13,8 +13,8 @@ export function overlaps(a: Volume, b: Volume): boolean {
 export function validPosition(dimensions: Voxel, p: Voxel): boolean {
   return (['x', 'y', 'z'] as const).every(axis => Number.isSafeInteger(p[axis]) && p[axis] >= 0 && p[axis] < dimensions[axis])
 }
-export function validateLifeSpecification(spec: Specification): void {
-  if (spec.simulation.endCondition !== 'turn_limit') throw new LifeRuleError('この実装段階の終了条件はturn_limitです')
+export function validateLifeSpecification(spec: Specification, lifecycle = false): void {
+  if (!lifecycle && spec.simulation.endCondition !== 'turn_limit') throw new LifeRuleError('この実装段階の終了条件はturn_limitです')
   if (spec.town.facilities.filter(f => f.type === 'residential').length !== 1) throw new LifeRuleError('住宅街(type=residential)を必ず1施設含めてください')
   if (new Set(spec.town.facilities.map(f => f.locationId)).size !== spec.town.facilities.length) throw new LifeRuleError('各施設のlocationIdは一意にしてください')
   for (const f of spec.town.facilities) {
@@ -50,7 +50,7 @@ export function audible(facility: LifeFacility, source: Voxel, target: Voxel, vo
 export function speechRecipients(facility: LifeFacility, source: LifeActor, actors: LifeActor[], voice: Voice): string[] {
   if (!source.position) throw new LifeRuleError(`発話者の座標が未設定です: ${source.id}`)
   const position = source.position
-  return actors.filter(a => a.id !== source.id && a.locationId === source.locationId && a.activity !== 'sleeping' && a.position && audible(facility, position, a.position, voice)).map(a => a.id)
+  return actors.filter(a => a.id !== source.id && a.locationId === source.locationId && a.activity !== 'sleeping' && a.activity !== 'dead' && a.position && audible(facility, position, a.position, voice)).map(a => a.id)
 }
 export function households(population: Population) {
   return [...new Set(population.npcs.map(n => n.householdId))].map(id => ({ id, members: population.npcs.filter(n => n.householdId === id).map(n => ({ id: n.id, name: n.name, age: n.age })) }))

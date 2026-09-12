@@ -68,6 +68,16 @@
 
 ---
 
+# 0D. 世代交代と自動Compilation
+
+新規ワールドは`lifecycleVersion: 1`を保存し、0Aの次段階制限を更新する。4ターンで1歳、80歳以上で老衰。`marry`は双方一致で成立し、初期実子・予約込み各人/ペア最大4人、出生間隔1〜3年、出生時の両親は男女・18〜49歳・生存とする。
+
+成人による`createHome`、成人入居者自身の`consentHome`、住宅街の`completeHome`を追加する。成人は未成年の代理申請も可能。住宅街は既存領域を保持して拡張し、初期仕様は書き換えない。
+
+終了条件はターン上限・初期世代全員死亡・そのいずれか。終了時に全生存NPCを自動Compilationする。仮プロンプトを専用Markdownから読み込み、人物・関係・記憶・行動・予定・Runtime Promptとhash付きmanifestを出力する。Minecraft Modとスキン画像生成は対象外。詳細は [LIFECYCLE.md](LIFECYCLE.md)。
+
+---
+
 # 1. Project Thesis
 
 本プロジェクトはAI NPCそのものを作るTrack 1作品ではない。
