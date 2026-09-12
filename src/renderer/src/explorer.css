@@ -1,0 +1,9 @@
+.agent-row .mini-avatar { flex-shrink:0; }
+.agent-row .agent-name { flex:1; min-width:0; }
+.agent-name>span, .agent-name>small { display:block; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+.agent-row .agent-status { display:inline-flex; align-items:center; gap:5px; flex-shrink:0; width:auto; height:auto; padding:4px 6px; border:1px solid currentColor; border-radius:4px; background:transparent; color:#84958c; font-size:9px; line-height:1; }
+.agent-row .agent-status::before { content:''; width:4px; height:4px; border-radius:50%; background:currentColor; }
+.agent-row .agent-status.running { color:#add599; background:#a1bd9110; }
+.agent-row .agent-status.idle { color:#94a6a0; background:transparent; }
+.agent-row .agent-status.interrupted { color:#d9ab75; background:transparent; }
+.agent-row .agent-status.ended { color:#888f8c; }
