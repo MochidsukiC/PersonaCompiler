@@ -39,6 +39,8 @@ function stopProbe(probe: Probe): void {
 }
 
 it.runIf(process.platform === 'win32')('receives every exit when nine Windows terminals close together across five lifecycles', async () => {
+  const messagePorts = () => process.getActiveResourcesInfo().filter(resource => resource === 'MessagePort').length
+  const initialPorts = messagePorts()
   for (let wave = 0; wave < 5; wave++) {
     const probes: Probe[] = []
     try {
@@ -52,4 +54,5 @@ it.runIf(process.platform === 'win32')('receives every exit when nine Windows te
       for (const probe of probes) stopProbe(probe)
     }
   }
+  await expect.poll(messagePorts, { timeout: 5000 }).toBe(initialPorts)
 })

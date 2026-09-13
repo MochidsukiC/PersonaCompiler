@@ -24,6 +24,8 @@ npm start
 
 Windowsのnode-pty 1.2.0-beta.15にはNode-APIの公式バイナリーが同梱されています。複数端末の同時終了で起きるnativeの競合を修正した版に固定しています（[修正理由と検証](improvements/12-native-terminal-exit.md)）。この環境ではElectronから実PTYの起動・出力を確認済みです。ソースからビルドする場合は `npm run rebuild:native` を使用します。Visual Studio C++ Build Toolsと対応するSpectre軽減ライブラリが必要です。現在の環境では後者が不足しており、ソース再ビルドは未成功です。軽減機能を無効にする変更は行っていません。
 
+Windows端末の終了後にworkerが残る別の不具合には、`patch-package`で[解放処理のパッチ](improvements/13-terminal-resource-cleanup.md)を適用しています。通常の`npm ci`で自動適用され、パッチが適用できなければインストールを失敗として通知します。
+
 ## 実Codexでの操作
 
 1. 「ChatGPTで接続」または「APIキーで接続」を選びます。ChatGPTログインは外部ブラウザーで完了します。APIキーはアプリのパスワード入力欄へ入力してください。

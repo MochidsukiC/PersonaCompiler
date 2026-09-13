@@ -9,6 +9,8 @@ import type { RpcNotification } from '../../src/backend/rpc'
 import type { SessionBinding } from '../../src/core/contracts'
 
 it('shares a real remote Codex TUI and backend thread using a local Responses fixture', async () => {
+  const messagePorts = () => process.getActiveResourcesInfo().filter(resource => resource === 'MessagePort').length
+  const initialPorts = messagePorts()
   await mkdir('.local/tests', { recursive: true })
   const root = await mkdtemp(path.resolve('.local/tests/connection-'))
   const requests: string[] = []
@@ -107,5 +109,6 @@ it('shares a real remote Codex TUI and backend thread using a local Responses fi
     await runtime.close()
     provider.closeAllConnections()
     await new Promise<void>((resolve, reject) => provider.close(error => error ? reject(error) : resolve()))
+    await expect.poll(messagePorts, { timeout: 5000 }).toBe(initialPorts)
   }
 })

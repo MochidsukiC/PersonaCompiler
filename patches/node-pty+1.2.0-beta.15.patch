@@ -1,0 +1,14 @@
+diff --git a/node_modules/node-pty/lib/windowsPtyAgent.js b/node_modules/node-pty/lib/windowsPtyAgent.js
+index 90ffd8f..674c3ed 100644
+--- a/node_modules/node-pty/lib/windowsPtyAgent.js
++++ b/node_modules/node-pty/lib/windowsPtyAgent.js
+@@ -267,7 +267,9 @@ var WindowsPtyAgent = /** @class */ (function () {
+         }
+         this._inSocket.readable = false;
+         this._outSocket.readable = false;
++        this._inSocket.destroy();
+         this._outSocket.destroy();
++        this._conoutSocketWorker.dispose();
+     };
+     return WindowsPtyAgent;
+ }());

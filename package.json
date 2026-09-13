@@ -6,6 +6,7 @@
   "description": "Persona Compiler desktop simulation observatory",
   "main": "out/main/index.js",
   "scripts": {
+    "postinstall": "patch-package --error-on-fail",
     "dev": "electron-vite dev",
     "start": "electron-vite preview",
     "build": "electron-vite build",
@@ -26,6 +27,7 @@
     "chokidar": "5.0.0",
     "lucide-react": "1.45.0",
     "node-pty": "1.2.0-beta.15",
+    "patch-package": "8.0.1",
     "react": "19.3.0",
     "react-dom": "19.3.0",
     "three": "0.186.0",
