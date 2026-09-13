@@ -12,7 +12,8 @@
 | `cb42232` | NPCパッケージ内の関係→根拠記憶の参照切れを検出 | [06](06-relationship-evidence.md) |
 | `50ee77d` | manifestとファイルを照合し、成果物の欠損・内容変更を表示 | [07](07-package-inspection.md) |
 | `e09f04f` | 端末幅の変更が1回のIPC失敗で止まり続ける不具合を修正 | [08](08-terminal-resize.md) |
-| `git log --oneline -- improvements/09-review-comparison.md`で確認 | 再生成したNPCの設定・根拠・Runtime Promptを別の制作レビューと比較 | [09](09-review-comparison.md) |
+| `5881ff8` | 再生成したNPCの設定・根拠・Runtime Promptを別の制作レビューと比較 | [09](09-review-comparison.md) |
+| `git log --oneline -- improvements/10-ended-npc-reconnect.md`で確認 | 終了済みワールドのNPC端末について、バックエンドでも再接続を拒否 | [10](10-ended-npc-reconnect.md) |
 
 各コミットの直後に差分の自己レビューを実施しました。機能ごとに取り消す場合は、作業ツリーの変更を確認したうえで`git revert <commit>`を使えます。全体を戻す場合は表の下から上の順にrevertしてください。
 
@@ -30,7 +31,7 @@
 
 ## 検証の結論と残る範囲
 
-build・typecheck・lint成功、単体43・backend124・Electron E2E18の合計185件PASS。最後の折りたたみ表示への変更後は、影響するE2E3件を再検証済みです。変更のないCLI接続7・保存4件については[07](07-package-inspection.md)の成功した検証証拠を使用し、全体の対象は196件です。最新の終了コードとログは[09](09-review-comparison.md)に記載しています。[06](06-relationship-evidence.md)の検証時にnative Workerが2件異常終了し、同じ設定での単独実行は7件PASSでした。[07](07-package-inspection.md)のCLI検証も7件PASSですが、過去のnative終了の原因は未確定です。標準のテスト除外・閾値・警告設定は変更していません。
+最終ソースでbuild・typecheck・lint成功、単体43・backend125・Electron E2E18・CLI接続7・保存4の合計197件PASS。最新の終了コードとログは[10](10-ended-npc-reconnect.md)に記載しています。[06](06-relationship-evidence.md)の検証時にnative Workerが2件異常終了しましたが、同じ設定での単独実行と、その後のCLI接続検証は成功しています。過去のnative終了の原因は未確定です。標準のテスト除外・閾値・警告設定は変更していません。
 
 追加機能はローカルfixtureで保存・IPC・画面操作まで検証できたため、ユーザーの最新指示に従って実モデルの試運転はスキップしました。ChatGPT推論・APIキーの使用は開始していません。既存ワールドの削除も実施していません。今後、実モデルが必要な検証をする場合は全モデルを5.6 Luna / low固定とし、通常の機能確認は3日（12ターン）を基準にします。
 

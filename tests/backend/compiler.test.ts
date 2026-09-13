@@ -163,6 +163,24 @@ it('loads the external compiler prompt and rejects invented references', () => {
   expect(() => validateCharacterPackage(input, { ...packageFor('npc0'), memoryIds: ['other-memory'] })).toThrow('記憶参照')
   expect(() => validateCharacterPackage(input, { ...packageFor('npc0'), relationshipTargets: ['npc1'] })).toThrow('関係参照')
 })
+it('rejects terminal reconnection for ended-world NPCs while keeping parent production access', async () => {
+  const { runtime, engine } = await setup()
+  try {
+    await engine.backendCommand({ type: 'connect', authMode: 'chatgpt' }); await completed(engine)
+    const resumed: string[] = [], attached: string[] = []
+    const connection: AgentRuntime = runtime
+    connection.resume = async binding => { resumed.push(binding.agentId) }
+    engine.sessions.attach = async binding => { attached.push(binding.agentId) }
+    await expect(engine.backendCommand({ type: 'terminalReconnect', sessionId: 'npc0' })).rejects.toThrow('終了した世界のConversationは閲覧専用です')
+    expect(resumed).toEqual([])
+    expect(attached).toEqual([])
+    await expect(engine.terminalSnapshot('npc0')).rejects.toThrow('終了した住民のConversationは閲覧専用です')
+    await expect(engine.terminalInput('npc0', '追加の入力')).rejects.toThrow('終了した世界のConversationは閲覧専用です')
+    await engine.backendCommand({ type: 'terminalReconnect', sessionId: 'parent' })
+    expect(resumed).toEqual(['parent'])
+    expect(attached).toEqual(['parent'])
+  } finally { await engine.close() }
+})
 it('records a lost parent response without automatically sending it again', async () => {
   const { runtime, engine } = await setup()
   try {

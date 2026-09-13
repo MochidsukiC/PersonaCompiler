@@ -291,6 +291,7 @@ export class BackendEngine {
           const binding = this.view.preparation.sessions.find(s => s.sessionId === command.sessionId)
           if (!binding?.threadId || !binding.seedPersisted) throw new Error(`保存済みConversationがありません: ${command.sessionId}`)
           if (this.life?.isDead(binding.agentId)) throw new Error('故人のConversationは閲覧専用です')
+          if (binding.role === 'npc' && this.life?.snapshot().stage === 'ended') throw new Error('終了した世界のConversationは閲覧専用です')
           if (!this.sessions.isRunning(binding.sessionId)) {
             binding.cwd = await realpath(binding.cwd)
             await this.runtime.resume(binding)
