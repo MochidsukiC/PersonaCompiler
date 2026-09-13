@@ -23,6 +23,7 @@ interface TerminalSession {
   sequence: number
   queue: Promise<void>
   exited: boolean
+  started: Promise<void>
   done: Promise<void>
 }
 
@@ -52,12 +53,15 @@ export class PtyTerminals implements TerminalBridge {
       })
     } catch (error) { if (!previous) terminal.dispose(); throw new Error(`Codex CLI端末を起動できません: ${binding.agentId}`, { cause: error }) }
     let finish!: () => void
+    let start!: () => void
+    const started = new Promise<void>(resolve => { start = resolve })
     const done = new Promise<void>(resolve => { finish = resolve })
-    const session: TerminalSession = previous ?? { terminal, serializer, process: child, sequence: 0, queue: Promise.resolve(), exited: false, done }
-    session.process = child; session.exited = false; session.done = done
+    const session: TerminalSession = previous ?? { terminal, serializer, process: child, sequence: 0, queue: Promise.resolve(), exited: false, started, done }
+    session.process = child; session.exited = false; session.started = started; session.done = done
     this.sessions.set(binding.sessionId, session)
     if (!previous) terminal.onData(data => { if (!session.exited) session.process.write(data) })
     child.onData(data => {
+      start()
       const write = session.queue.then(() => new Promise<void>(resolve => terminal.write(data, () => {
         session.sequence++
         this.emit({ sessionId: binding.sessionId, sequence: session.sequence, data })
@@ -66,7 +70,7 @@ export class PtyTerminals implements TerminalBridge {
       session.queue = write.then(() => undefined, error => this.failed(`端末出力 ${binding.sessionId}: ${String(error)}`))
     })
     child.onExit(event => {
-      session.exited = true; finish()
+      session.exited = true; start(); finish()
       if (!this.closing) {
         for (const listener of this.exitListeners) listener(binding.sessionId)
         if (event.exitCode !== 0) this.failed(`Codex CLI端末が終了しました: ${binding.sessionId} / code=${event.exitCode}。Conversationは保存されています。端末の「再接続」を押してください`)
@@ -91,6 +95,10 @@ export class PtyTerminals implements TerminalBridge {
   async dispose(): Promise<void> {
     this.closing = true
     const sessions = [...this.sessions.values()]
+    await Promise.all(sessions.map(async s => {
+      if (!s.exited && s.process.pid <= 0) await Promise.race([s.started, delay(6000)])
+      if (!s.exited && s.process.pid <= 0) throw new Error(`Codex CLI端末の起動を確認できません: pid=${s.process.pid}`)
+    }))
     for (const s of sessions) if (!s.exited) s.process.write('\x03\x15/exit\r')
     await Promise.all(sessions.map(s => Promise.race([s.done, delay(1500)])))
     for (const s of sessions) {
