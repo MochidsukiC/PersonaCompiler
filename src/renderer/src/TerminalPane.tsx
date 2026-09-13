@@ -66,8 +66,7 @@ export function TerminalPane({ agent, real = false, connected = true, memoryEnab
       const rows = Math.min(200, dimensions.rows)
       if (terminal.cols === cols && terminal.rows === rows) return
       terminal.resize(cols, rows)
-      resizing = resizing.then(() => window.persona.terminalResize(agent.sessionId, cols, rows))
-      void resizing.catch(report)
+      resizing = resizing.then(() => window.persona.terminalResize(agent.sessionId, cols, rows)).catch(report)
     }
     void window.persona.terminalSnapshot(agent.sessionId).then(snapshot => {
       if (disposed) return
