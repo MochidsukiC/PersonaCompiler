@@ -22,7 +22,7 @@ npm start
 
 `codex.exe` をPATHに置くか、`PERSONA_CODEX_BIN`へ実行ファイルの絶対パスを指定してください。アプリは接続ボタンから専用App Serverを起動し、backendと実CLIの両方が同じConversationへ接続します。App ServerのWebSocketはlocalhost限定で、起動ごとに生成するcapability tokenで認証します。
 
-Windowsのnode-pty 1.1.0にはNode-APIの公式バイナリーが同梱されています。この環境ではElectronから実PTYの起動・出力を確認済みです。ソースからビルドする場合は `npm run rebuild:native` を使用します。Visual Studio C++ Build Toolsと対応するSpectre軽減ライブラリが必要です。現在の環境では後者が不足しており、ソース再ビルドは未成功です。軽減機能を無効にする変更は行っていません。
+Windowsのnode-pty 1.2.0-beta.15にはNode-APIの公式バイナリーが同梱されています。複数端末の同時終了で起きるnativeの競合を修正した版に固定しています（[修正理由と検証](improvements/12-native-terminal-exit.md)）。この環境ではElectronから実PTYの起動・出力を確認済みです。ソースからビルドする場合は `npm run rebuild:native` を使用します。Visual Studio C++ Build Toolsと対応するSpectre軽減ライブラリが必要です。現在の環境では後者が不足しており、ソース再ビルドは未成功です。軽減機能を無効にする変更は行っていません。
 
 ## 実Codexでの操作
 
