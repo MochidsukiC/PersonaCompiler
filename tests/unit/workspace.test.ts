@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it, vi } from 'vitest'
-import { mkdir, mkdtemp, readFile, rename, writeFile } from 'node:fs/promises'
+import { mkdir, mkdtemp, readFile, readdir, rename, symlink, writeFile } from 'node:fs/promises'
 import path from 'node:path'
 import { Workspace, digest } from '../../src/main/workspace'
 import { demoMap, initialState, residents } from '../../src/main/fixtures'
@@ -91,6 +91,29 @@ describe('Disk workspace', () => {
     for (const illegal of ['../outside.md', 'C:\\Windows\\win.ini', 'agents/../../outside.md', 'state.json:stream']) {
       await expect(store.resolve(illegal)).rejects.toThrow('相対パス')
     }
+  })
+
+  it('rejects external directory links before creating missing descendants and keeps the write queue usable', async () => {
+    const store = await setup(true)
+    const outside = await mkdtemp(path.resolve('.local/tests/workspace-outside-'))
+    await writeFile(path.join(outside, 'sentinel.txt'), 'unchanged')
+    await mkdir(path.join(store.root, 'artifacts'))
+    await symlink(outside, path.join(store.root, 'artifacts/linked'), process.platform === 'win32' ? 'junction' : 'dir')
+    await expect(store.write('artifacts/linked/new/nested/review.json', '{}')).rejects.toThrow('プロジェクト外へ保存できません')
+    expect(await readdir(outside)).toEqual(['sentinel.txt'])
+    expect(await readFile(path.join(outside, 'sentinel.txt'), 'utf8')).toBe('unchanged')
+    await expect(store.write('artifacts/linked/sentinel.txt', 'overwritten')).rejects.toThrow('プロジェクト外へ保存できません')
+    expect(await readFile(path.join(outside, 'sentinel.txt'), 'utf8')).toBe('unchanged')
+    await store.write('artifacts/local/nested/review.json', 'local')
+    expect(await store.read('artifacts/local/nested/review.json')).toBe('local')
+  })
+
+  it('creates nested outputs through an existing directory link contained in the workspace', async () => {
+    const store = await setup(true)
+    await mkdir(path.join(store.root, 'shared'))
+    await symlink(path.join(store.root, 'shared'), path.join(store.root, 'linked'), process.platform === 'win32' ? 'junction' : 'dir')
+    await store.write('linked/new/nested/review.json', 'inside')
+    expect(await store.read('shared/new/nested/review.json')).toBe('inside')
   })
 
   it('serializes local reads and replacement writes, and appends without rewriting external edits', async () => {

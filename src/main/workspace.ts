@@ -98,9 +98,23 @@ export class Workspace {
   async write(relative: string, content: string | Uint8Array): Promise<void> {
     await this.fileOperation(async () => {
       const target = this.relativePath(relative)
+      const root = await realpath(this.root)
+      let ancestor = path.dirname(target)
+      for (;;) {
+        let resolved: string
+        try { resolved = await realpath(ancestor) }
+        catch (error) {
+          if (!(error instanceof Error && 'code' in error && error.code === 'ENOENT')) throw error
+          ancestor = path.dirname(ancestor)
+          continue
+        }
+        const relation = path.relative(root, resolved)
+        if (relation.startsWith('..') || path.isAbsolute(relation)) throw new Error(`プロジェクト外へ保存できません: ${relative}`)
+        break
+      }
       await mkdir(path.dirname(target), { recursive: true })
       const parent = await realpath(path.dirname(target))
-      const relation = path.relative(await realpath(this.root), parent)
+      const relation = path.relative(root, parent)
       if (relation.startsWith('..') || path.isAbsolute(relation)) throw new Error(`プロジェクト外へ保存できません: ${relative}`)
       const temporary = `${target}.${randomUUID()}.tmp`
       await writeFile(temporary, content, { flag: 'wx' })
