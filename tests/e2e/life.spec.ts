@@ -35,11 +35,11 @@ test('residential 3D, two-way voice boundaries, terminal selection and world con
       snapshot.state.agents = fixture.simulation.actors.map(a => ({ id: a.id, sessionId: a.id, name: a.name, parentId: null, role: 'npc', status: 'running', color: '#b0c0f4' }))
       const steps: boolean[] = []
       const publish = () => { snapshot.version++; BrowserWindow.getAllWindows()[0].webContents.send('persona:event', { type: 'workspace', snapshot }) }
-      ipcMain.on('test:world-update', (_event, update: { speech?: { actorId: string; text: string }[]; dimensions?: boolean; revision?: boolean; move?: boolean }) => {
+      ipcMain.on('test:world-update', (_event, update: { speech?: { actorId: string; text: string; recipients?: string[] }[]; dimensions?: boolean; revision?: boolean; move?: boolean }) => {
         const simulation = snapshot.state.simulation!
         for (const speech of update.speech ?? []) {
           const actor = simulation.actors.find(a => a.id === speech.actorId)!
-          simulation.events.push({ sequence: simulation.events.length + 1, turn: simulation.turn, kind: 'speech', actorId: actor.id, text: speech.text, recipients: [], locationId: actor.locationId, position: actor.position })
+          simulation.events.push({ sequence: simulation.events.length + 1, turn: simulation.turn, kind: 'speech', actorId: actor.id, text: speech.text, recipients: speech.recipients ?? [], locationId: actor.locationId, position: actor.position })
         }
         if (update.dimensions) simulation.facilities.find(f => f.locationId === 'home')!.dimensions.x++
         if (update.move) simulation.actors[0].position!.y++
@@ -149,6 +149,30 @@ test('residential 3D, two-way voice boundaries, terminal selection and world con
     await page.getByRole('button', { name: '一時停止', exact: true }).click()
     const result = await page.evaluate(() => window.persona.backendStatus()) as BackendSnapshot & { steps: boolean[] }
     expect(result.steps).toEqual([true, false])
+    await page.getByRole('button', { name: '出来事', exact: true }).click()
+    const timeline = page.getByRole('region', { name: '出来事の検索' })
+    await expect(timeline.getByRole('status')).toHaveText('2 / 2件 · 新しい順')
+    await timeline.getByLabel('出来事の住民').selectOption('npc0')
+    await expect(timeline.getByRole('article')).toHaveCount(1)
+    await timeline.getByLabel('出来事の種類').selectOption('unheard')
+    await expect(timeline.getByText('発話 · 受信対象 0人', { exact: true })).toBeVisible()
+    await timeline.getByLabel('出来事のターン').fill('0')
+    await timeline.getByLabel('出来事を検索').fill('図書室')
+    await expect(timeline.getByRole('status')).toHaveText('1 / 2件 · 新しい順')
+    await timeline.getByRole('button', { name: '絞り込みを解除' }).click()
+    await app.evaluate(({ ipcMain }) => ipcMain.emit('test:world-update', null, { speech: [{ actorId: 'npc2', text: '本を返す約束を覚えています。', recipients: ['npc4'] }] }))
+    await expect(timeline.getByRole('status')).toHaveText('3 / 3件 · 新しい順')
+    await timeline.getByLabel('出来事の住民').selectOption('npc4')
+    await expect(timeline.getByRole('article')).toHaveCount(1)
+    await expect(timeline.getByText('発話 · 受信対象 1人', { exact: true })).toBeVisible()
+    await timeline.getByRole('button', { name: '住民2', exact: true }).click()
+    await expect(page.getByRole('button', { name: '住民2のタブ', exact: true })).toHaveCount(1)
+    await timeline.getByLabel('出来事を検索').fill('検索結果なし')
+    await expect(timeline.getByText('条件に一致する出来事はありません。')).toBeVisible()
+    await timeline.getByRole('button', { name: '絞り込みを解除' }).click()
+    await page.screenshot({ path: test.info().outputPath('event-timeline.png') })
+    await page.getByRole('button', { name: 'ワールド', exact: true }).click()
+    await expect(page.getByTestId('world-map')).toBeVisible()
     expect(errors).toEqual([])
     await expect(page.getByRole('alert')).toHaveCount(0)
   } finally { await app.close() }
