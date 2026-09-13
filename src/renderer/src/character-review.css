@@ -1,0 +1,16 @@
+.character-review { flex: 1; min-height: 0; overflow: auto; padding: 24px; overflow-wrap: anywhere; line-height: 1.8; color: #d0dfca; }
+.character-review h1 { font-size: 24px; margin: 8px 0; }
+.character-review h2 { font-size: 15px; margin: 22px 0 8px; }
+.review-metrics { display: flex; flex-wrap: wrap; gap: 10px 20px; padding: 12px 0; border-block: 1px solid #3a4f3c; }
+.review-note { color: #9db096; font-size: 11px; }
+.character-review input { display: block; width: 100%; padding: 9px; margin-top: 5px; border: 1px solid #4c6549; border-radius: 5px; color: #d8e5cf; background: #121b15; }
+.review-claim { border-left: 2px solid #638453; margin: 10px 0; padding: 2px 12px 10px; background: #1a291e; }
+.review-claim p { white-space: pre-wrap; }
+.review-citations { display: flex; flex-wrap: wrap; gap: 7px; }
+.review-citations button { border: 1px solid #5a7350; border-radius: 4px; padding: 3px 9px; color: #c6dbb8; font-size: 11px; }
+.review-citations button[aria-pressed=true] { background: #455d37; }
+.review-evidence { border: 1px solid #78955f; background: #17221a; border-radius: 6px; padding: 16px; margin: 18px 0; }
+.review-evidence small { color: #abc899; }
+.file-preview .character-review pre { padding: 10px 0; white-space: pre-wrap; font-size: 11px; line-height: 1.8; }
+.character-review details { padding: 12px 0; border-top: 1px solid #354834; }
+.character-review summary { cursor: pointer; }

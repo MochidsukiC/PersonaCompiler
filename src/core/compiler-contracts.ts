@@ -16,7 +16,7 @@ export const productionOperationSchema = z.object({
 export const compilationSchema = z.object({
   id: z.string(), sourceRevision: z.number().int(), promptHash: z.string(), modelId: z.string(),
   status: z.enum(['pending', 'running', 'completed', 'failed', 'empty']),
-  tasks: z.array(z.object({ npcId: z.string(), name: z.string(), status: z.enum(['pending', 'prepared', 'requested', 'completed', 'failed']), input: z.string(), inputHash: z.string().nullable(), output: z.string(), error: z.string().nullable() }))
+  tasks: z.array(z.object({ npcId: z.string(), name: z.string(), status: z.enum(['pending', 'prepared', 'requested', 'completed', 'failed']), input: z.string(), inputHash: z.string().nullable(), output: z.string(), review: z.string().optional(), error: z.string().nullable() }))
 })
 export type Compilation = z.infer<typeof compilationSchema>
 export type ProductionOperation = z.infer<typeof productionOperationSchema>

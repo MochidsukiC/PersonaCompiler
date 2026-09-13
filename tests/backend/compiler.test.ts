@@ -3,7 +3,7 @@ import { mkdir, mkdtemp, readFile, writeFile } from 'node:fs/promises'
 import path from 'node:path'
 import { BackendEngine } from '../../src/backend/engine'
 import { ParentProduction } from '../../src/backend/production'
-import { Workspace } from '../../src/main/workspace'
+import { digest, Workspace } from '../../src/main/workspace'
 import { PersistenceStore } from '../../src/backend/persistence-store'
 import { LifeHarness } from '../../src/core/life-harness'
 import { emptyPreparation, type SessionBinding } from '../../src/core/contracts'
@@ -125,7 +125,12 @@ it('automatically compiles all survivors, preserves successful packages and does
     expect(compilation.tasks.filter(t => t.status === 'completed')).toHaveLength(4)
     const task = compilation.tasks.find(t => t.npcId === 'npc0')!
     const manifest = JSON.parse(await readFile(path.join(root, task.output, 'manifest.json'), 'utf8'))
-    expect(Object.keys(manifest.files)).toHaveLength(6)
+    expect(Object.keys(manifest.files)).toHaveLength(8)
+    expect(task.review).toBe(`${task.output}/review.json`)
+    const reviewText = await readFile(path.join(root, task.review!), 'utf8')
+    expect(JSON.parse(reviewText)).toMatchObject({ npcId: 'npc0', name: '住民0', sourceRevision: compilation.sourceRevision })
+    expect(manifest.files['review.json']).toBe(digest(reviewText))
+    expect(await readFile(path.join(root, task.output, 'review.md'), 'utf8')).toContain('# NPC制作レビュー')
     expect(compilation.tasks.find(t => t.npcId === 'npc1')!.error).toContain('根拠')
     await engine.close()
     const nextRuntime = new Runtime(), next = new BackendEngine(base, nextRuntime, terminals(), () => undefined, undefined, () => new FixturePersistencePort())

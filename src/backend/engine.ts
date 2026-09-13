@@ -6,6 +6,7 @@ import { ParentProduction } from './production'
 import { ConversationCache } from './conversation-cache'
 import { compilationSchema, productionOperationSchema, characterPackageSchema, type ProductionOperation } from '../core/compiler-contracts'
 import { StandardCompilerPrompts, compilerInputSchema, validateCharacterPackage, type CompilerInput, type CompilerPromptProvider } from '../core/compiler'
+import { buildCharacterReview, characterReviewMarkdown } from '../core/character-review'
 import { identitySchema, type Birth, type Resident } from '../core/lifecycle-contracts'
 import type { NpcInitialization } from '../core/contracts'
 import { randomUUID } from 'node:crypto'
@@ -611,15 +612,18 @@ export class BackendEngine {
           artifact = await this.productionService().generate('compile', task.npcId, `${prompt}\nJSON Schema:\n${JSON.stringify(z.toJSONSchema(characterPackageSchema))}`, source)
         }
         const result = validateCharacterPackage(source, artifact)
+        const review = buildCharacterReview(source, result, compilation.sourceRevision, compilation.modelId)
         const files: Record<string, string> = {
           'character.json': JSON.stringify({ version: 1, identity: source.identity, lifeSummary: result.lifeSummary, personality: result.personality, speechTendency: result.speechTendency, appearance: result.appearance, goals: result.goals }, null, 2),
           'relationships.json': JSON.stringify(source.relations.filter(r => result.relationshipTargets.includes(r.target)), null, 2),
           'memories.json': JSON.stringify(source.memories.filter(m => result.memoryIds.includes(m.id)), null, 2),
           'behavior.json': JSON.stringify({ observed: result.behavior, runtimeGuidance: result.runtimeGuidance }, null, 2),
-          'schedule.json': JSON.stringify(result.schedule, null, 2), 'system_prompt.md': result.systemPrompt
+          'schedule.json': JSON.stringify(result.schedule, null, 2), 'system_prompt.md': result.systemPrompt,
+          'review.json': JSON.stringify(review, null, 2), 'review.md': characterReviewMarkdown(review)
         }
         for (const [name, text] of Object.entries(files)) await this.workspace.write(`${task.output}/${name}`, text)
         await this.workspace.write(`${task.output}/manifest.json`, JSON.stringify({ version: 1, npcId: task.npcId, sourceRevision: compilation.sourceRevision, inputHash: digest(await this.workspace.read(task.input)), promptHash: compilation.promptHash, modelId: compilation.modelId, files: Object.fromEntries(Object.entries(files).map(([name, text]) => [name, digest(text)])) }, null, 2))
+        task.review = `${task.output}/review.json`
         task.status = 'completed'; await this.persist(); await this.persistence?.flush()
       } catch (error) {
         task.status = 'failed'; task.error = errorMessage(error); await this.persist()
