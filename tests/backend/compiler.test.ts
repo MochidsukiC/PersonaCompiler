@@ -3,6 +3,7 @@ import { mkdir, mkdtemp, readFile, writeFile } from 'node:fs/promises'
 import path from 'node:path'
 import { BackendEngine } from '../../src/backend/engine'
 import { ParentProduction } from '../../src/backend/production'
+import { inspectCharacterPackage } from '../../src/backend/package-inspection'
 import { digest, Workspace } from '../../src/main/workspace'
 import { PersistenceStore } from '../../src/backend/persistence-store'
 import { LifeHarness } from '../../src/core/life-harness'
@@ -126,6 +127,9 @@ it('automatically compiles all survivors, preserves successful packages and does
     const task = compilation.tasks.find(t => t.npcId === 'npc0')!
     const manifest = JSON.parse(await readFile(path.join(root, task.output, 'manifest.json'), 'utf8'))
     expect(Object.keys(manifest.files)).toHaveLength(8)
+    const inspection = await inspectCharacterPackage(engine.workspace, `${task.output}/manifest.json`)
+    expect(inspection.files).toHaveLength(8)
+    expect(inspection.files.every(file => file.status === 'match')).toBe(true)
     expect(task.review).toBe(`${task.output}/review.json`)
     const reviewText = await readFile(path.join(root, task.review!), 'utf8')
     expect(JSON.parse(reviewText)).toMatchObject({ npcId: 'npc0', name: '住民0', sourceRevision: compilation.sourceRevision })

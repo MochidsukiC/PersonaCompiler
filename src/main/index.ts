@@ -9,6 +9,7 @@ import { CodexRuntime } from '../backend/runtime'
 import { PtyTerminals } from '../backend/terminals'
 import { backendCommandSchema } from '../core/contracts'
 import { eventHistoryQuerySchema } from '../core/event-search'
+import { inspectCharacterPackage } from '../backend/package-inspection'
 import { messageOf } from './workspace'
 import createPersistenceWorker from '../backend/persistence-worker?nodeWorker'
 
@@ -37,6 +38,7 @@ function register(channel: string, operation: (...args: unknown[]) => unknown): 
 }
 
 const identifier = z.string().min(1).max(160)
+register('inspect-character-package', manifestPath => inspectCharacterPackage(currentEngine().workspace, z.string().min(1).max(1000).parse(manifestPath)))
 register('event-history', query => {
   const target = currentEngine()
   if (!(target instanceof BackendEngine)) throw new Error('保存済みの出来事検索にはBackendが必要です')

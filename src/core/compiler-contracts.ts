@@ -21,3 +21,14 @@ export const compilationSchema = z.object({
 export type Compilation = z.infer<typeof compilationSchema>
 export type ProductionOperation = z.infer<typeof productionOperationSchema>
 export type CharacterPackage = z.infer<typeof characterPackageSchema>
+
+const hash = z.string().regex(/^[a-f0-9]{64}$/)
+export const characterManifestSchema = z.object({
+  version: z.literal(1), npcId: z.string().min(1), sourceRevision: z.number().int().nonnegative(),
+  inputHash: hash, promptHash: hash, modelId: z.string().min(1),
+  files: z.record(z.string().min(1), hash).refine(files => Object.keys(files).length > 0, 'パッケージに成果物がありません')
+}).strict()
+export interface CharacterPackageInspection {
+  npcId: string; sourceRevision: number; modelId: string; checkedAt: string;
+  files: { path: string; status: 'match' | 'changed' | 'missing'; expectedHash: string; actualHash: string | null; bytes: number | null }[]
+}

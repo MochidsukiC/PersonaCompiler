@@ -1,0 +1,10 @@
+.package-inspection { padding: 22px 24px; line-height: 1.7; color: #cbdac4; overflow-wrap: anywhere; }
+.package-inspection h1 { font-size: 22px; margin: 8px 0; }
+.package-inspection header p, .package-inspection-note { color: #a8b89e; }
+.package-inspection ul { padding: 0; list-style: none; }
+.package-inspection li { border: 1px solid #3e5238; border-left: 3px solid #a0c27d; padding: 12px 15px; margin: 10px 0; border-radius: 5px; }
+.package-inspection li > span { display: block; }
+.package-inspection .package-file-changed, .package-inspection .package-file-missing { border-left-color: #e5af75; }
+.package-inspection code { font-size: 11px; }
+.package-inspection pre { white-space: pre-wrap; font-size: 11px; }
+.package-inspection details { margin-top: 12px; }
