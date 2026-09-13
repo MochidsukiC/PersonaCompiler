@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from 'react'
 import type { SimulationSnapshot } from '../../core/life-contracts'
 import type { EventHistoryPage } from '../../core/event-search'
 import { emptyEventFilter, eventLabels, filterEvents, type EventFilter } from './event-timeline'
+import { EventReportButton } from './EventReportButton'
 import './event-timeline.css'
 
 export function EventTimeline({ simulation, runId, historyAvailable, onAgent }: { simulation: SimulationSnapshot; runId: string; historyAvailable: boolean; onAgent(id: string): void }) {
@@ -41,6 +42,7 @@ export function EventTimeline({ simulation, runId, historyAvailable, onAgent }: 
     {error && <p role="alert">{error}</p>}
     <p className="event-note">{historyMode ? `確定保存された履歴を検索しています。未保存の出来事は含みません。${history ? `保存revision ${history.revision}。` : ''}最新の保存を調べる場合は再検索してください。` : '検索対象は画面に届いた直近の出来事です。過去の全履歴は含みません。'}受信対象は既読・記憶化を保証するものではありません。</p>
     {historyMode && changed && <p className="event-note">条件が変更されています。「保存済み履歴を検索」で反映してください。</p>}
+    <EventReportButton key={`${runId}:${simulation.revision}:${historyMode}:${request.current}:${JSON.stringify(filter)}`} disabled={historyMode && (busy || !history || changed)} input={{ runId, simulation, filter: historyMode ? applied : filter, events, source: historyMode && history ? { kind: 'saved', revision: history.revision, savedAt: history.savedAt, offset: history.offset, total: history.total } : { kind: 'recent', available: simulation.events.length } }} />
     {historyMode && history && <div className="event-history-controls"><button className="button compact" disabled={busy || changed || history.offset === 0} onClick={() => void searchHistory(Math.max(0, history.offset - 100), history.revision)}>前の100件</button><button className="button compact" disabled={busy || changed || history.offset + events.length >= history.total} onClick={() => void searchHistory(history.offset + 100, history.revision)}>次の100件</button></div>}
     {events.length === 0 && (!historyMode || history) && <div className="event-empty">{historyMode || simulation.events.length ? '条件に一致する出来事はありません。' : 'まだ出来事はありません。生活が進むとここに表示されます。'}</div>}
     <div className="event-list">{events.map(event => <article key={event.sequence} className={`event-record event-${event.kind}`}>

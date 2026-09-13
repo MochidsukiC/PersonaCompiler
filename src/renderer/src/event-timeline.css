@@ -20,4 +20,7 @@
 .event-recipients { border-top: 1px solid #354c30; padding-top: 9px; font-size: 11px; }
 .event-empty { padding: 30px 10px; text-align: center; border: 1px dashed #49623f; color: #adc09f; }
 .event-history-controls { display: flex; flex-wrap: wrap; gap: 8px; margin: 12px 0; }
+.event-report-control { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 12px; margin: 12px 0 18px; }
+.event-report-control small { color: #9fb295; }
+.event-report-control p { flex-basis: 100%; margin: 0; font-size: 11px; }
 @media (max-width: 1250px) { .event-filters { grid-template-columns: 1fr 1fr; } .event-query { grid-column: span 1; } }
