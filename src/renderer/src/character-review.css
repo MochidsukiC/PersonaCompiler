@@ -14,3 +14,11 @@
 .file-preview .character-review pre { padding: 10px 0; white-space: pre-wrap; font-size: 11px; line-height: 1.8; }
 .character-review details { padding: 12px 0; border-top: 1px solid #354834; }
 .character-review summary { cursor: pointer; }
+.review-comparison { border: 1px solid #4c6549; border-radius: 6px; padding: 14px; margin: 18px 0; }
+.review-comparison > summary { font-size: 14px; font-weight: 600; }
+.review-comparison select { display: block; width: 100%; min-width: 0; padding: 8px; margin: 6px 0 12px; color: #d8e5cf; background: #121b15; border: 1px solid #4c6549; border-radius: 4px; }
+.review-change { border-left: 3px solid #94b879; background: #1a291e; padding: 10px; margin: 10px 0; }
+.review-change-removed { border-color: #c88e7b; }
+.review-change-evidence { border-color: #d5bc79; }
+.review-change p { white-space: pre-wrap; }
+.review-comparison h3 { font-size: 12px; }
