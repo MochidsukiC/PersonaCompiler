@@ -4,7 +4,7 @@ import type { FileEntry } from '../../shared/contracts'
 import { ReviewComparison } from './ReviewComparison'
 import './character-review.css'
 
-export function CharacterReview({ content, currentPath, files, fileVersions, workspaceVersion }: { content: string; currentPath: string; files: FileEntry[]; fileVersions?: Record<string, number>; workspaceVersion: number }) {
+export function CharacterReview({ content, currentPath, currentHash, runId, files, fileVersions, workspaceVersion }: { content: string; currentPath: string; currentHash: string; runId: string; files: FileEntry[]; fileVersions?: Record<string, number>; workspaceVersion: number }) {
   const [query, setQuery] = useState('')
   const [sourceId, setSourceId] = useState<string | null>(null)
   const evidence = useRef<HTMLElement>(null)
@@ -23,7 +23,7 @@ export function CharacterReview({ content, currentPath, files, fileVersions, wor
     <header><span className="eyebrow">CHARACTER PRODUCTION REVIEW</span><h1>{review.name}</h1><p>{review.npcId} · 世界revision {review.sourceRevision}</p></header>
     <div className="review-metrics"><strong>根拠付き設定 {count}件</strong><span>採用記憶 {review.memoryCount}件</span><span>関係 {review.relationshipCount}件</span></div>
     <p className="review-note">Compilation時点の資料から、設定とその根拠を確認できます。根拠の存在は、モデルの解釈の正しさを保証しません。</p>
-    <ReviewComparison review={review} currentPath={currentPath} files={files} fileVersions={fileVersions} workspaceVersion={workspaceVersion} />
+    <ReviewComparison review={review} currentPath={currentPath} currentHash={currentHash} runId={runId} files={files} fileVersions={fileVersions} workspaceVersion={workspaceVersion} />
     <label>設定を検索<input aria-label="制作レビューを検索" value={query} onChange={event => setQuery(event.target.value)} placeholder="例: 話し方、約束、工房" /></label>
     <p role="status">{visible} / {count}件の設定</p>
     {visible === 0 && <p>{search ? '検索条件に一致する設定はありません。' : '生成された設定はありません。'}</p>}

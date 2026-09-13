@@ -17,7 +17,8 @@
 | `1b16d1b` | 表示中の出来事を、検索条件・参照位置付きのQAレポートとしてコピー | [11](11-event-qa-report.md) |
 | `7ab905d` | 複数端末の同時終了時のnative競合について、node-ptyの上流修正版を適用 | [12](12-native-terminal-exit.md) |
 | `aad2f5b` | 端末の終了・再接続で出力workerが残る不具合を修正 | [13](13-terminal-resource-cleanup.md) |
-| `git log --oneline -- improvements/14-terminal-startup-shutdown.md`で確認 | 起動が遅い端末の停止時に未確定PIDへシグナルを送る不具合を修正 | [14](14-terminal-startup-shutdown.md) |
+| `25741c4` | 起動が遅い端末の停止時に未確定PIDへシグナルを送る不具合を修正 | [14](14-terminal-startup-shutdown.md) |
+| `git log --oneline -- improvements/15-review-comparison-report.md`で確認 | NPCの比較結果を、両側の根拠・資料のhash付きでMarkdownへコピー | [15](15-review-comparison-report.md) |
 
 各コミットの直後に差分の自己レビューを実施しました。機能ごとに取り消す場合は、作業ツリーの変更を確認したうえで`git revert <commit>`を使えます。全体を戻す場合は表の下から上の順にrevertしてください。
 
@@ -31,12 +32,13 @@
 - 生成済みNPCの「成果物を照合」でmanifestと各ファイルの一致・変更・欠損を確認できます。特定のゲーム形式には依存しません。
 - 今回の変更後に生成したCompilationには「制作レビュー」が付きます。既存出力は自動で再生成していません。
 - 同じNPCの制作レビューが2つあれば、「別の出力と比較」で再生成による変更を確認できます。比較そのものにモデル推論は不要です。
+- 「比較レポートをコピー」で変更内容・両側の根拠・参照情報を制作記録へ持ち出せます。
 - 実モデルを使わない操作検証は`npx playwright test tests/e2e/lifecycle.spec.ts tests/e2e/life.spec.ts`で実行できます（先にbuild）。これは合成fixtureであり、実モデルの生成品質を示すデモではありません。
 - 実行済み検証のログとスクリーンショットは`.local/polish-20260914/`にあります。
 
 ## 検証の結論と残る範囲
 
-最終ソースでbuild・typecheck・lint成功、単体46・backend129・CLI接続と端末回帰8・保存4・Electron E2E18の計205件PASS。最新の終了コードとログは[14](14-terminal-startup-shutdown.md)に記載しています。端末の同時終了時のnative競合には[12](12-native-terminal-exit.md)で上流修正版を適用し、[13](13-terminal-resource-cleanup.md)でworker残留を修正してクリーンインストールも検証しました。さらに起動が遅い端末の停止時に未確定PIDへシグナルを送る不具合を修正しました。過去の別の終了コード`3221226505`の直接のstackは未取得であり、過去の全異常終了を解消したとは断定しません。既存のテスト除外・閾値・警告設定は変更していません。
+最終ソースでbuild・typecheck・lint成功、単体49・backend129・Electron E2E18の計196件PASS。最新の終了コードとログは[15](15-review-comparison-report.md)に記載しています。変更のないバックエンド・端末・保存処理については[14](14-terminal-startup-shutdown.md)のCLI接続と端末回帰8・保存4件の成功結果を再利用し、確認済みの検証は計208件です。この12件は最新機能の追加後には再実行していません。端末の同時終了時のnative競合には[12](12-native-terminal-exit.md)で上流修正版を適用し、[13](13-terminal-resource-cleanup.md)でworker残留を修正してクリーンインストールも検証しました。さらに起動が遅い端末の停止時に未確定PIDへシグナルを送る不具合を修正しました。過去の別の終了コード`3221226505`の直接のstackは未取得であり、過去の全異常終了を解消したとは断定しません。既存のテスト除外・閾値・警告設定は変更していません。
 
 追加機能はローカルfixtureで保存・IPC・画面操作まで検証できたため、ユーザーの最新指示に従って実モデルの試運転はスキップしました。ChatGPT推論・APIキーの使用は開始していません。既存ワールドの削除も実施していません。今後、実モデルが必要な検証をする場合は全モデルを5.6 Luna / low固定とし、通常の機能確認は3日（12ターン）を基準にします。
 

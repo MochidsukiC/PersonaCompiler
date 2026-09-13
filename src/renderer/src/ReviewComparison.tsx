@@ -1,12 +1,14 @@
 import { useEffect, useState } from 'react'
 import { characterReviewSchema, type CharacterReview } from '../../core/character-review'
 import { compareCharacterReviews } from '../../core/review-comparison'
+import { reviewComparisonMarkdown } from '../../core/review-comparison-report'
 import type { FileEntry } from '../../shared/contracts'
+import { ReportCopyControl } from './ReportCopyControl'
 
 const paths = (files: FileEntry[]): string[] => files.flatMap(file => file.kind === 'file' ? [file.path] : paths(file.children ?? []))
 const labels = { added: '追加', removed: '削除', evidence: '根拠変更' }
 
-export function ReviewComparison({ review, currentPath, files, fileVersions, workspaceVersion }: { review: CharacterReview; currentPath: string; files: FileEntry[]; fileVersions?: Record<string, number>; workspaceVersion: number }) {
+export function ReviewComparison({ review, currentPath, currentHash, runId, files, fileVersions, workspaceVersion }: { review: CharacterReview; currentPath: string; currentHash: string; runId: string; files: FileEntry[]; fileVersions?: Record<string, number>; workspaceVersion: number }) {
   const [selected, setSelected] = useState('')
   const [generation, setGeneration] = useState(0)
   const revision = fileVersions ? fileVersions[selected] : workspaceVersion
@@ -19,29 +21,32 @@ export function ReviewComparison({ review, currentPath, files, fileVersions, wor
     <label>基準の制作レビュー<select aria-label="比較の基準" value={selected} onChange={event => setSelected(event.target.value)}><option value="">比較する出力を選択</option>{candidates.map(file => <option key={file} value={file}>Compilation {file.split('/')[1]}</option>)}</select></label>
     {candidates.length === 0 && <p className="review-note">同じNPCの別の制作レビューが保存されると比較できます。</p>}
     {selected && <button className="button compact" onClick={() => setGeneration(value => value + 1)}>基準を再読み込み</button>}
-    {selected && <ComparisonResult key={`${selected}:${revision}:${generation}`} selected={selected} review={review} />}
+    {selected && <ComparisonResult key={`${selected}:${revision}:${generation}`} selected={selected} review={review} currentPath={currentPath} currentHash={currentHash} runId={runId} />}
   </section></details>
 }
 
-function ComparisonResult({ selected, review }: { selected: string; review: CharacterReview }) {
-  const [baseline, setBaseline] = useState<CharacterReview | null>(null)
+function ComparisonResult({ selected, review, currentPath, currentHash, runId }: { selected: string; review: CharacterReview; currentPath: string; currentHash: string; runId: string }) {
+  const [baseline, setBaseline] = useState<{ review: CharacterReview; hash: string } | null>(null)
   const [error, setError] = useState<string | null>(null)
   useEffect(() => {
     let cancelled = false
     void window.persona.preview(selected).then(preview => {
       const parsed = characterReviewSchema.parse(JSON.parse(preview.content))
       if (parsed.npcId !== review.npcId) throw new Error(`比較するNPCが一致しません: ${parsed.npcId} / ${review.npcId}`)
-      if (!cancelled) setBaseline(parsed)
+      if (!cancelled) setBaseline({ review: parsed, hash: preview.hash })
     }).catch(reason => { if (!cancelled) setError(reason instanceof Error ? reason.message : String(reason)) })
     return () => { cancelled = true }
   }, [selected, review.npcId])
-  const comparison = baseline ? compareCharacterReviews(baseline, review) : null
+  const comparison = baseline ? compareCharacterReviews(baseline.review, review) : null
   return <>
     {error && <p role="alert">比較できません: {error}</p>}
     {!baseline && !error && <p role="status">基準を読み込み中…</p>}
     {comparison && baseline && <>
-      <p className="review-note">基準: revision {baseline.sourceRevision} · {baseline.modelId}<br />現在: revision {review.sourceRevision} · {review.modelId}</p>
+      <p className="review-note">基準: revision {baseline.review.sourceRevision} · {baseline.review.modelId}<br />現在: revision {review.sourceRevision} · {review.modelId}</p>
       <p role="status">追加 {comparison.changes.filter(c => c.kind === 'added').length}件 · 削除 {comparison.changes.filter(c => c.kind === 'removed').length}件 · 根拠変更 {comparison.changes.filter(c => c.kind === 'evidence').length}件 · 設定一致 {comparison.unchanged}件</p>
+      <ReportCopyControl label="比較レポートをコピー" description="変更内容・両側の根拠・資料の参照情報をMarkdownでコピーします。"
+        text={() => reviewComparisonMarkdown({ runId, before: { path: selected, hash: baseline.hash, review: baseline.review }, after: { path: currentPath, hash: currentHash, review } }, new Date().toISOString())}
+        success="比較結果と両側の資料をコピーしました。" />
       {comparison.changes.length === 0 && comparison.fields.length === 0 && <p>比較対象の設定・根拠・指針・メタデータは一致しています。</p>}
       {comparison.changes.map((change, index) => <div className={`review-change review-change-${change.kind}`} key={index}><strong>{labels[change.kind]} · {change.section}</strong><p>{change.text}</p><details><summary>両側の根拠を見る</summary>{([{ title: '基準', sources: change.before }, { title: '現在', sources: change.after }]).map(side => <div key={side.title}><h3>{side.title}</h3>{side.sources.length === 0 ? <p>設定なし</p> : side.sources.map(source => <div key={source.id}><small>{source.title} · {source.id}</small><pre>{source.text}</pre></div>)}</div>)}</details></div>)}
       {comparison.fields.map(field => <details key={field.title}><summary>{field.title}の変更</summary><h3>基準</h3><pre>{field.before}</pre><h3>現在</h3><pre>{field.after}</pre></details>)}
