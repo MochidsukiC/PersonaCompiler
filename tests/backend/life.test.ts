@@ -274,6 +274,29 @@ describe('Autonomous life harness', () => {
     expect(services.starts.filter(s => s.agentId === 'facility-school')).toHaveLength(1)
     expect(services.starts.filter(s => s.agentId === 'facility-residential')).toHaveLength(2)
   })
+  it('resumes only missing entry positions after an NPC finishes without placing itself', async () => {
+    const { harness, services } = await setup()
+    await harness.start(true); await active(harness)
+    await call(harness, 'npc0', 'moveToFacility', { facilityId: 'school' })
+    for (const actor of harness.snapshot().actors) {
+      if (actor.id !== 'npc0') await call(harness, actor.id, 'endTurn')
+      services.finish(actor.id)
+    }
+    await vi.waitFor(() => expect(harness.snapshot().stage).toBe('paused'))
+    services.omitInitializationFor = 'npc0'
+    await harness.resume(true)
+    await vi.waitFor(() => expect(harness.snapshot().stage).toBe('error'))
+    await harness.drain()
+    expect(harness.snapshot()).toMatchObject({ turn: 2, phase: 'entry', error: '初期位置Toolが実行されていません: npc0' })
+    expect(harness.snapshot().actors[0]).toMatchObject({ locationId: 'school', position: null })
+    const others = structuredClone(harness.snapshot().actors.slice(1).map(a => a.position))
+    const before = services.starts.length
+    await harness.resume(true); await active(harness)
+    expect(harness.snapshot().actors[0]).toMatchObject({ locationId: 'school', position: positions[0] })
+    expect(harness.snapshot().actors.slice(1).map(a => a.position)).toEqual(others)
+    expect(services.starts.slice(before).filter(s => s.text.includes('setInitialPosition')).map(s => s.agentId)).toEqual(['npc0'])
+    expect(harness.snapshot().turn).toBe(2)
+  })
   it('waits for a delayed steer acknowledgement even when the native inference has completed', async () => {
     const { harness, services } = await setup()
     await harness.start(true); await active(harness)

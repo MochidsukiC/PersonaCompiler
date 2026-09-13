@@ -69,7 +69,10 @@ export default function App() {
     const sessionId = agentsRef.current.find(agent => agent.id === id)?.sessionId
     if (sessionId) setUnread(previous => { const next = new Set(previous); next.delete(sessionId); return next })
   }, [])
-  const openFile = useCallback((file: string) => { setSelectedFile(file); setPreview(null); setPreviewError(null) }, [])
+  const openFile = useCallback((file: string) => {
+    if (file === selectedFile) return
+    setSelectedFile(file); setPreview(null); setPreviewError(null)
+  }, [selectedFile])
   const closeTab = (id: string) => {
     const next = tabs.filter(tab => tab !== id)
     setTabs(next)
