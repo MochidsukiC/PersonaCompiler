@@ -7,3 +7,5 @@
 .agent-row .agent-status.idle { color:#94a6a0; background:transparent; }
 .agent-row .agent-status.interrupted { color:#d9ab75; background:transparent; }
 .agent-row .agent-status.ended { color:#888f8c; }
+.explorer-project > div { min-width: 0; }
+.explorer-project strong { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }

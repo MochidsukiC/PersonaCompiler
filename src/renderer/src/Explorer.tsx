@@ -20,14 +20,15 @@ function FileTree({ files, selected, onSelect, level = 0 }: { files: FileEntry[]
   })}</>
 }
 
-export function Explorer({ files, agents, selected, activeAgent, onSelect, onAgent, onReveal }: {
+export function Explorer({ projectName, files, agents, selected, activeAgent, onSelect, onAgent, onReveal }: {
+  projectName: string;
   files: FileEntry[]; agents: AgentDescriptor[]; selected: string | null; activeAgent: string | null;
   onSelect: (path: string) => void; onAgent: (id: string) => void; onReveal: () => void
 }) {
   const [filter, setFilter] = useState('')
   return <aside className="explorer">
     <div className="pane-heading"><span>EXPLORER</span><button className="icon-button" onClick={onReveal} aria-label="プロジェクトフォルダーを開く" title="Windows Explorerで開く"><FolderOpen size={15} /></button></div>
-    <div className="explorer-project"><span className="project-icon"><Folder size={16} /></span><div><strong>木漏れ日の町</strong><small>LOCAL WORKSPACE</small></div><span className="local-dot" /></div>
+    <div className="explorer-project"><span className="project-icon"><Folder size={16} /></span><div><strong title={projectName}>{projectName}</strong><small>LOCAL WORKSPACE</small></div><span className="local-dot" /></div>
     <div className="section-label"><ChevronDown size={12} /> プロジェクトファイル <span>DISK</span></div>
     <div className="file-tree" aria-label="ファイル一覧"><FileTree files={files} selected={selected} onSelect={onSelect} /></div>
     <div className="agent-browser">

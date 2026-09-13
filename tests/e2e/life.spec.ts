@@ -61,6 +61,7 @@ test('residential 3D, two-way voice boundaries, terminal selection and world con
       publish()
     }, { original, backend, simulation, map: draft.map })
     await expect(page.getByText('5人 · 3軒の家', { exact: true })).toBeVisible()
+    await expect(page.locator('.explorer-project strong')).toHaveText(draft.map.name)
     await page.locator('.react-flow__controls-fitview').click()
     await app.evaluate(({ ipcMain }) => ipcMain.emit('test:world-update', null, { speech: [{ actorId: 'npc0', text: '今日は図書室へ行きましょう。' }, { actorId: 'npc1', text: '私も一緒に行きたいです。' }] }))
     await expect(page.getByTestId('speech-bubble')).toHaveCount(2)
