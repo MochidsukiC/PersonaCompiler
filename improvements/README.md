@@ -9,6 +9,7 @@
 | `927a251` | 出来事QA。住民・受信対象・種別・ターン・本文で検索 | [03](03-event-timeline.md) |
 | `b759300` | サイドバーを実際の町名と一致させる | [04](04-world-title.md) |
 | `b894b1c` | 保存済みの全期間から出来事を検索。100件ずつ安定したページ送り | [05](05-saved-event-history.md) |
+| `git log --oneline -- improvements/06-relationship-evidence.md`で確認 | NPCパッケージ内の関係→根拠記憶の参照切れを検出 | [06](06-relationship-evidence.md) |
 
 各コミットの直後に差分の自己レビューを実施しました。機能ごとに取り消す場合は、作業ツリーの変更を確認したうえで`git revert <commit>`を使えます。全体を戻す場合は表の下から上の順にrevertしてください。
 
@@ -24,7 +25,7 @@
 
 ## 検証の結論と残る範囲
 
-最終ソースでbuild・typecheck・lint成功、単体40・backend120・実CLI接続7・保存4・Electron E2E14の合計185件PASS。終了コードとログは[05](05-saved-event-history.md)に記載しています。標準のテスト除外・閾値・警告設定は変更していません。
+最終ソースでbuild・typecheck・lint成功、単体40・backend121・実CLI接続7・保存4・Electron E2E14の合計186件PASS。終了コードとログは[06](06-relationship-evidence.md)に記載しています。CLI接続検証は初回にnative Workerが2件異常終了し、同じ設定での単独実行は7件PASSでした。native終了の原因は未確定です。標準のテスト除外・閾値・警告設定は変更していません。
 
 追加機能はローカルfixtureで保存・IPC・画面操作まで検証できたため、ユーザーの最新指示に従って実モデルの試運転はスキップしました。ChatGPT推論・APIキーの使用は開始していません。既存ワールドの削除も実施していません。今後、実モデルが必要な検証をする場合は全モデルを5.6 Luna / low固定とし、通常の機能確認は3日（12ターン）を基準にします。
 

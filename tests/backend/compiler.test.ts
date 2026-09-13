@@ -173,6 +173,19 @@ it('records a lost parent response without automatically sending it again', asyn
     expect(operations.at(-1)).toMatchObject({ status: 'uncertain', turnId: null })
   } finally { await engine.close() }
 })
+it('requires selected relationships to retain their exact supporting memory revisions in the exported package', () => {
+  const input = compilerInputSchema.parse({
+    identity: { ...population.npcs[0], sexCategory: 'female', generation: 0, bornTurn: 0, diedTurn: null },
+    memories: [{ id: 'memory-1', ownerId: 'npc0', kind: 'episodic', text: '住民1に本を貸してもらった。', meaning: '住民1を信頼している。', cues: { people: ['npc1'], places: [], topics: ['本'] }, importance: 0.7, sourceIds: ['source-1'], revision: 2, createdTurn: 1, organizedTurn: 4, recalledTurn: null, strengthenedTurn: 4, status: 'retained', reminder: null }],
+    relations: [{ source: 'npc0', target: 'npc1', label: '信頼', description: '本を貸してくれた相手', evidence: [{ memoryId: 'memory-1', revision: 2 }], observedTurn: 4 }],
+    conversation: [], events: [], evidenceIds: ['identity', 'memory:memory-1:2', 'relation:npc1']
+  })
+  const artifact = { ...packageFor('npc0'), relationshipTargets: ['npc1'] }
+  expect(() => validateCharacterPackage(input, artifact)).toThrow('関係の根拠記憶が出力対象にありません: npc1/memory-1/2')
+  expect(validateCharacterPackage(input, { ...artifact, memoryIds: ['memory-1'] }).relationshipTargets).toEqual(['npc1'])
+  expect(() => validateCharacterPackage({ ...input, memories: [{ ...input.memories[0], revision: 3 }] }, { ...artifact, memoryIds: ['memory-1'] })).toThrow('関係の根拠記憶')
+  expect(validateCharacterPackage(input, packageFor('npc0')).relationshipTargets).toEqual([])
+})
 it('creates a newborn through the parent, adds its conversation and restores the expanded population', async () => {
   const { base, runtime, engine } = await setup('ready')
   try {
