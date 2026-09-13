@@ -1,5 +1,6 @@
 import { z } from 'zod'
 import { isDeepStrictEqual } from 'node:util'
+import { setImmediate as yieldToEventLoop } from 'node:timers/promises'
 import type { LifeChange, LifeHistoryRecord } from './persistence'
 import { lifeTransaction, plainLifeValue } from './life-transaction'
 import type { NpcInitialization, Population, Specification } from './contracts'
@@ -54,6 +55,7 @@ export class LifeHarness {
   private data: LifeCheckpoint
   private queue: Promise<unknown> = Promise.resolve()
   private scheduled = false
+  private lastYield = performance.now()
   private closed = false
   private stopTask: Promise<void> | null = null
   private readonly pending = new Set<Promise<unknown>>()
@@ -127,6 +129,7 @@ export class LifeHarness {
   }
   private update<T>(work: (draft: LifeCheckpoint) => T): Promise<T> {
     const task = this.queue.then(async () => {
+      if (performance.now() - this.lastYield >= 8) { await yieldToEventLoop(); this.lastYield = performance.now() }
       this.memoryChanges = []
       const transaction = this.services.memory ? lifeTransaction(this.data) : null
       const next = transaction ? transaction.value : structuredClone(this.data)
@@ -171,6 +174,11 @@ export class LifeHarness {
     }
     for (const key of Object.keys(next) as (keyof LifeCheckpoint)[]) {
       if (key === 'world' || key === 'receipts') continue
+      if (key === 'jobs') {
+        next.jobs.forEach((job, index) => { if (!isDeepStrictEqual(this.data.jobs[index], job)) patches.push({ path: ['jobs', index], value: job }) })
+        if (next.jobs.length !== this.data.jobs.length) patches.push({ path: ['jobs', 'length'], value: next.jobs.length })
+        continue
+      }
       if (!isDeepStrictEqual(this.data[key], next[key])) patches.push({ path: [key], value: next[key] })
     }
     for (const key of Object.keys(next.world) as (keyof SimulationSnapshot)[]) {
@@ -454,10 +462,13 @@ export class LifeHarness {
     return reply({ requestId: request.id, householdId: request.householdId })
   }
   private async drive(): Promise<void> {
-    const actions = await this.update(d => {
-      if (this.closed || !['initializing', 'running'].includes(d.world.stage)) return []
+    if (this.closed || !['initializing', 'running'].includes(this.data.world.stage)) return
+    const { actions, births, writes } = await this.update(d => {
+      const actions: { job: Job; activeTurn: string | null; steer: boolean }[] = []
+      const writes: [string, string][] = []
+      if (this.closed || !['initializing', 'running'].includes(d.world.stage)) return { actions, births: [], writes }
       this.advance(d)
-      if (!['initializing', 'running'].includes(d.world.stage)) return []
+      if (!['initializing', 'running'].includes(d.world.stage)) return { actions, births: [], writes }
       if (d.world.phase === 'activity') for (const a of d.world.actors) {
         const busy = d.active[a.id] || [...this.recallTasks.keys()].some(key => key.startsWith(`${a.id}:`)) || d.jobs.some(j => j.agentId === a.id && ['queued', 'requested', 'running'].includes(j.status))
         if (busy) continue
@@ -470,7 +481,7 @@ export class LifeHarness {
           } else { a.compact = 'running'; this.enqueue(d, a.id, 'compact', '') }
         }
       }
-      const actions: { job: Job; activeTurn: string | null; steer: boolean }[] = []
+      const requestedAgents = new Set(d.jobs.filter(j => j.status === 'requested').map(j => j.agentId))
       for (const job of d.jobs.filter(j => j.status === 'queued')) {
         const recipient = d.world.actors.find(a => a.id === job.agentId)
         if (recipient?.activity === 'sleeping' && ['message', 'reply', 'user'].includes(job.kind)) {
@@ -479,8 +490,9 @@ export class LifeHarness {
         }
         const active = d.active[job.agentId]
         if (active && (!active.turnId || active.kind === 'compact' || job.kind === 'compact')) continue
-        if (active && d.jobs.some(j => j.agentId === job.agentId && j.status === 'requested')) continue
+        if (active && requestedAgents.has(job.agentId)) continue
         job.status = 'requested'
+        requestedAgents.add(job.agentId)
         if (recipient?.activity === 'ended' && ['message', 'reply', 'user'].includes(job.kind)) recipient.activity = 'active'
         if (active) job.turnId = active.turnId
         if (!active) d.active[job.agentId] = { turnId: null, kind: job.kind === 'compact' ? 'compact' : 'normal', compactSeen: false }
@@ -490,25 +502,17 @@ export class LifeHarness {
         }
         actions.push({ job: plainLifeValue(job), activeTurn: active?.turnId ?? null, steer: !!active })
       }
-      return actions
-    })
-    const births = await this.update(d => {
-      if (!d.world.lifecycle || d.world.stage !== 'running' || d.world.phase !== 'between') return []
-      const due = d.world.lifecycle.births.filter(b => b.status === 'scheduled' && b.dueDay <= d.world.lifecycle!.processedDay)
+      const due = d.world.lifecycle && d.world.stage === 'running' && d.world.phase === 'between'
+        ? d.world.lifecycle.births.filter(b => b.status === 'scheduled' && b.dueDay <= d.world.lifecycle!.processedDay) : []
       for (const b of due) b.status = 'requested'
-      return plainLifeValue(due)
-    })
-    for (const birth of births) this.track(this.spawnBirth(birth).catch(error => this.fail(error)))
-    for (const action of actions) this.track(this.dispatch(action.job, action.activeTurn, action.steer).catch(error => this.fail(error)))
-    const writes = await this.update(d => {
-      if (d.world.phase !== 'activity' || d.world.stage !== 'running') return []
-      const writes: [string, string][] = []
-      for (const [id, text] of Object.entries(d.terminalInputs)) {
+      if (d.world.phase === 'activity' && d.world.stage === 'running') for (const [id, text] of Object.entries(d.terminalInputs)) {
         if (this.actor(d, id).activity === 'sleeping' || d.terminalWrites[id]) continue
         d.terminalWrites[id] = text; delete d.terminalInputs[id]; writes.push([id, text])
       }
-      return writes
+      return { actions, births: plainLifeValue(due), writes }
     })
+    for (const birth of births) this.track(this.spawnBirth(birth).catch(error => this.fail(error)))
+    for (const action of actions) this.track(this.dispatch(action.job, action.activeTurn, action.steer).catch(error => this.fail(error)))
     for (const [agentId, text] of writes) {
       await this.services.terminalInput(agentId, text)
       await this.update(d => { delete d.terminalWrites[agentId] })
@@ -551,6 +555,10 @@ export class LifeHarness {
   }
   notify(agentId: string, method: string, params: unknown): void {
     if (this.closed) return
+    if (method === 'item/completed') {
+      const item = z.object({ item: z.object({ type: z.string() }) }).safeParse(params)
+      if (item.success && !['contextCompaction', 'userMessage'].includes(item.data.item.type)) return
+    }
     this.track(this.update(d => {
       if (method === 'turn/started') {
         const { turn } = z.object({ turn: z.object({ id: z.string() }) }).parse(params)

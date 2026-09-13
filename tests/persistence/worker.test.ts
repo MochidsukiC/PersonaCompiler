@@ -76,7 +76,9 @@ it('keeps tools and snapshots live during a ten second native worker stall and r
   try {
     legacy = new LifeHarness(spec, people, legacyServices, state); legacyServices.harness = legacy
     await legacy.start(true)
-    await vi.waitFor(() => { const active = Object.values(legacy!.checkpoint().active); expect(active).toHaveLength(20); expect(active.every(turn => turn.turnId)).toBe(true) })
+    await legacy.drain()
+    const legacyActive = Object.values(legacy.checkpoint().active)
+    expect(legacyActive).toHaveLength(20); expect(legacyActive.every(turn => turn.turnId)).toBe(true)
     const legacyTimes = await runActions(legacy, 40)
     await legacy.pause(); await legacy.drain()
     const legacyStall = Math.max(...stalls); stalls.length = 0; lastTick = performance.now()
@@ -89,7 +91,9 @@ it('keeps tools and snapshots live during a ten second native worker stall and r
     memoryServices.save = async () => { throw new Error('legacy save on memory path') }
     memory = new LifeHarness(spec, people, memoryServices, state); memoryServices.harness = memory
     await memory.start(true)
-    await vi.waitFor(() => { const active = Object.values(memory!.checkpoint().active); expect(active).toHaveLength(20); expect(active.every(turn => turn.turnId)).toBe(true) })
+    await memory.drain()
+    const memoryActive = Object.values(memory.checkpoint().active)
+    expect(memoryActive).toHaveLength(20); expect(memoryActive.every(turn => turn.turnId)).toBe(true)
     const flush = coordinator.flush()
     await vi.waitFor(() => expect(Atomics.load(new Int32Array(marker), 0)).toBe(1))
     const began = performance.now(), memoryTimes = await runActions(memory, 40)
