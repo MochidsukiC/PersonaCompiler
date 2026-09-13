@@ -6,7 +6,7 @@ import { emptyPreparation, type BackendSnapshot } from '../../src/core/contracts
 import type { SimulationSnapshot } from '../../src/core/life-contracts'
 import type { WorkspaceSnapshot } from '../../src/shared/contracts'
 
-test('residential 3D, one-way voice boundaries, terminal selection and world controls', async () => {
+test('residential 3D, two-way voice boundaries, terminal selection and world controls', async () => {
   await mkdir('.local/e2e', { recursive: true })
   const root = await mkdtemp(path.resolve('.local/e2e/life-ui-'))
   const env = Object.fromEntries(Object.entries(process.env).filter(([key, value]) => key !== 'ELECTRON_RUN_AS_NODE' && value !== undefined)) as Record<string, string>
@@ -129,7 +129,7 @@ test('residential 3D, one-way voice boundaries, terminal selection and world con
     await expect(page.getByTestId('voice-recipients')).toHaveText('住民0の声が届く相手: 住民1（同じ家の中のみ）')
     await expect(page.getByTestId('terminal')).toHaveAttribute('data-ready', 'true')
     await page.getByRole('button', { name: '施設内の住民4を選択' }).click()
-    await expect(page.getByTestId('voice-recipients')).toHaveText('住民4の声が届く相手: 住民0、住民1、住民2、住民3')
+    await expect(page.getByTestId('voice-recipients')).toHaveText('住民4の声が届く相手: なし')
     await page.getByRole('button', { name: '住宅1 family-a' }).click()
     const canvas = interior.locator('canvas')
     const box = (await canvas.boundingBox())!

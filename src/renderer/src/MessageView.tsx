@@ -2,7 +2,7 @@ import { useEffect, useLayoutEffect, useRef, useState } from 'react'
 import { ArrowDown, MessageCircle, Wrench } from 'lucide-react'
 import type { AgentDescriptor } from '../../shared/contracts'
 import type { ConversationItem, ConversationTurn } from '../../shared/conversation'
-import { receivedMessageDisplay } from '../../shared/conversation'
+import { receivedMessageDisplay, sentMessageDisplay } from '../../shared/conversation'
 import './messages.css'
 
 const statuses: Record<string, string> = { inProgress: '実行中', completed: '完了', failed: '失敗', interrupted: '中断', declined: '拒否' }
@@ -33,10 +33,14 @@ function MessageItem({ item, agent, turnStatus }: { item: ConversationItem; agen
   const failed = item.success === false || status === 'failed'
   const stopped = status === 'inProgress' && turnStatus !== 'inProgress'
   const label = failed ? '失敗' : stopped ? '未完了' : status ? (statuses[status] ?? status) : null
-  return <details className={`message-tool ${failed ? 'failed' : ''}`}>
+  const sent = agent.role === 'npc' ? sentMessageDisplay(item) : null
+  return <><details className={`message-tool ${failed ? 'failed' : ''}`}>
     <summary><Wrench size={13} /><strong>{tool ? String(item.tool) : (itemLabels[item.type] ?? item.type)}</strong>{label && <span>{label}</span>}</summary>
     {tool ? <><div className="tool-section"><small>引数</small><pre>{JSON.stringify(item.arguments, null, 2)}</pre></div><div className="tool-section"><small>結果</small><pre>{item.type === 'dynamicToolCall' ? (item.contentItems === null ? '結果はまだありません' : contentText(item.contentItems)) : JSON.stringify({ result: item.result, error: item.error }, null, 2)}</pre></div></> : <pre>{JSON.stringify(item, null, 2)}</pre>}
-  </details>
+  </details>{sent && <div className="message-row npc">
+    <span className="avatar" style={{ '--agent-color': agent.color } as React.CSSProperties}>{agent.name.slice(-1)}</span>
+    <div className="message-body"><small>{agent.name} · {sent.label}</small><div className="message-bubble">{sent.text}</div></div>
+  </div>}</>
 }
 
 export function MessageView({ agent, connected }: { agent: AgentDescriptor; connected: boolean }) {

@@ -9,6 +9,17 @@ export const conversationTurnSchema = z.object({
 export type ConversationTurn = z.infer<typeof conversationTurnSchema>
 export type ConversationItem = ConversationTurn['items'][number]
 
+const volumes = { low: '小声', medium: '普通の声', high: '大声' }
+const sentMessageSchema = z.object({
+  type: z.literal('dynamicToolCall'), tool: z.literal('sendMessage'), status: z.literal('completed'), success: z.literal(true),
+  arguments: z.object({ text: z.string().min(1), volume: z.enum(['low', 'medium', 'high']) })
+})
+export function sentMessageDisplay(item: ConversationItem): { label: string; text: string } | null {
+  const parsed = sentMessageSchema.safeParse(item)
+  if (!parsed.success) return null
+  return { label: `発言 · ${volumes[parsed.data.arguments.volume]}`, text: parsed.data.arguments.text }
+}
+
 const receivedMessageSchema = z.discriminatedUnion('kind', [
   z.object({ kind: z.literal('heardSpeech'), eventId: z.number().int(), turn: z.number().int(), speaker: z.object({ id: z.string(), name: z.string(), position: z.object({ x: z.number(), y: z.number(), z: z.number() }) }), volume: z.enum(['low', 'medium', 'high']), text: z.string() }),
   z.object({ kind: z.literal('facilityResponse'), facilityId: z.string(), text: z.string() })
@@ -72,6 +83,5 @@ export function receivedMessageDisplay(text: string): { label: string; text: str
   if (!parsed.success) return null
   const message = parsed.data
   if (message.kind === 'facilityResponse') return { label: `施設からの回答 · ${message.facilityId}`, text: message.text }
-  const volumes = { low: '小声', medium: '普通の声', high: '大声' }
   return { label: `${message.speaker.name} · ${volumes[message.volume]} · ターン ${message.turn}`, text: message.text }
 }

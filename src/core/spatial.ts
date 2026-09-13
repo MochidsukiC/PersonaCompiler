@@ -42,7 +42,7 @@ export function homeAt(facility: LifeFacility, position: Voxel) {
 }
 export function audible(facility: LifeFacility, source: Voxel, target: Voxel, voice: Voice): boolean {
   const home = homeAt(facility, source)
-  if (home && !contains(home.bounds, target)) return false
+  if (home?.id !== homeAt(facility, target)?.id) return false
   if (voice === 'high') return true
   const radius = voice === 'low' ? 1 : 5
   return (source.x - target.x) ** 2 + (source.y - target.y) ** 2 + (source.z - target.z) ** 2 <= radius ** 2

@@ -156,7 +156,7 @@ it('runs five real NPC conversations and four facilities through a day with hous
     expect(world.actors.find(a => a.id === 'npc2')!.locationId).toBe('office')
     expect(world.actors.find(a => a.id === 'npc4')!.locationId).toBe('shop')
     expect(world.events.find(e => e.text === '家の中の会話')!.recipients).toEqual(['npc1'])
-    expect(world.events.find(e => e.text === '屋外の会話')!.recipients.sort()).toEqual(['npc0', 'npc1', 'npc2', 'npc3'])
+    expect(world.events.find(e => e.text === '屋外の会話')!.recipients).toEqual([])
     expect(world.events.filter(e => e.kind === 'facility')).toHaveLength(5)
     expect(calls.every(c => c.success)).toBe(true)
     expect(saved).not.toBeNull()

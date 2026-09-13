@@ -109,10 +109,12 @@ describe('Residential space', () => {
     overlap.homes[1].bounds.max.x = 30
     expect(() => validateLayout(residential, overlap, ids)).toThrow('施設外')
   })
-  it.each(['low', 'medium', 'high'] as const)('keeps indoor %s voices private but lets outdoor voices enter homes', volume => {
+  it.each(['low', 'medium', 'high'] as const)('blocks %s voices in both directions across home boundaries', volume => {
     const inside = { x: 2, y: 0, z: 0 }, outside = { x: 3, y: 0, z: 0 }
     expect(audible(residential, inside, outside, volume)).toBe(false)
-    expect(audible(residential, outside, inside, volume)).toBe(true)
+    expect(audible(residential, outside, inside, volume)).toBe(false)
+    expect(audible(residential, inside, { x: 1, y: 0, z: 0 }, volume)).toBe(true)
+    expect(audible(residential, outside, { x: 3, y: 1, z: 0 }, volume)).toBe(true)
     expect(audible(residential, inside, { x: 4, y: 0, z: 0 }, volume)).toBe(false)
   })
   it('uses inclusive three dimensional Euclidean distances', () => {
@@ -308,7 +310,7 @@ describe('Autonomous life harness', () => {
     expect(situation.npcs.every((n: Record<string, unknown>) => !('temperament' in n) && !('memory' in n))).toBe(true)
     const actors = harness.snapshot().actors
     actors[1].activity = 'sleeping'; actors[2].locationId = 'school'
-    expect(speechRecipients(residential, actors[4], actors, 'high')).toEqual(['npc0', 'npc3'])
+    expect(speechRecipients(residential, actors[4], actors, 'high')).toEqual([])
   })
   it('sleeps exactly one world turn, compacts once and executes one reserved facility transfer at the next boundary', async () => {
     const { harness, services } = await setup()

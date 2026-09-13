@@ -23,6 +23,9 @@ test('NPC message history, tool details, view switching, scrolling and explicit 
       { id: 'situation-1', type: 'userMessage', content: [{ type: 'text', text: situationMessage }] },
       { id: 'agent-1', type: 'agentMessage', text: '【心の声】図書室で静かに本を読みたいな。', phase: 'commentary' },
       { id: 'tool-1', type: 'dynamicToolCall', tool: 'getSituation', arguments: {}, status: 'completed', success: true, contentItems: [{ type: 'inputText', text: '{"location":"図書室","people":2}' }] },
+      { id: 'sent-1', type: 'dynamicToolCall', tool: 'sendMessage', arguments: { text: 'みなさん、おはようございます。\n図書室へ行ってきます。', volume: 'high' }, status: 'completed', success: true, contentItems: [{ type: 'inputText', text: '{"eventId":455,"recipients":[]}' }] },
+      { id: 'sent-failed', type: 'dynamicToolCall', tool: 'sendMessage', arguments: { text: '失敗した発言です。', volume: 'low' }, status: 'completed', success: false, contentItems: [{ type: 'inputText', text: '活動していません。' }] },
+      { id: 'sent-pending', type: 'dynamicToolCall', tool: 'sendMessage', arguments: { text: '未完了の発言です。', volume: 'medium' }, status: 'inProgress', success: null, contentItems: null },
       { id: 'agent-2', type: 'agentMessage', text: '【独り言】さて、そろそろ出かけよう。', phase: 'final_answer' },
       { id: 'tool-2', type: 'dynamicToolCall', tool: 'moveToFacility', arguments: { facilityId: 'closed' }, status: 'completed', success: false, contentItems: [{ type: 'inputText', text: 'その施設には移動できません。' }] }
     ] }]
@@ -64,19 +67,28 @@ test('NPC message history, tool details, view switching, scrolling and explicit 
     await expect(messages.getByText('葵 · 心の声 · 途中経過', { exact: true })).toBeVisible()
     await expect(messages.getByText('葵 · 独り言', { exact: true })).toBeVisible()
     await expect(messages.getByText('ユーザーにのみ表示', { exact: true })).toHaveCount(2)
+    const sent = messages.locator('.message-row.npc').filter({ hasText: '葵 · 発言 · 大声' })
+    await expect(sent.locator('.message-bubble')).toHaveText('みなさん、おはようございます。\n図書室へ行ってきます。')
+    await expect(sent.locator('.thought-bubble')).toHaveCount(0)
+    await expect(sent.locator('.thought-visibility')).toHaveCount(0)
+    await expect(sent.locator('xpath=preceding-sibling::*[1]')).toContainText('sendMessage')
+    await expect(messages.locator('.message-bubble').filter({ hasText: '失敗した発言です。' })).toHaveCount(0)
+    await expect(messages.locator('.message-bubble').filter({ hasText: '未完了の発言です。' })).toHaveCount(0)
     await expect(page.getByTestId('terminal')).toBeHidden()
     await messages.locator('summary').filter({ hasText: 'getSituation' }).click()
     await expect(messages.getByText('{"location":"図書室","people":2}', { exact: true })).toBeVisible()
-    await expect(messages.locator('.message-tool.failed summary')).toContainText('失敗')
+    await expect(messages.locator('.message-tool.failed summary')).toHaveCount(2)
+    await expect(messages.locator('.message-tool.failed summary').filter({ hasText: 'sendMessage' })).toContainText('失敗')
+    await expect(messages.locator('.message-tool.failed summary').filter({ hasText: 'moveToFacility' })).toContainText('失敗')
     await page.screenshot({ path: test.info().outputPath('npc-messages.png') })
     await page.getByRole('button', { name: 'Codex', exact: true }).click()
     await expect(page.getByTestId('terminal')).toBeVisible()
     await expect(page.getByTestId('terminal')).toHaveAttribute('data-ready', 'true')
     await page.getByRole('button', { name: 'メッセージ', exact: true }).click()
-    await expect(messages.locator('.message-row')).toHaveCount(6)
+    await expect(messages.locator('.message-row')).toHaveCount(7)
     const longHistory = [...turns, ...Array.from({ length: 12 }, (_, i) => ({ id: `turn-${i + 2}`, status: 'completed', items: [{ id: `more-${i}`, type: 'agentMessage', text: `NPCの出力 ${i}\n${'会話の内容です。'.repeat(8)}` }] }))]
     await app.evaluate(({ ipcMain }, turns) => ipcMain.emit('test:messages', null, { turns }), longHistory)
-    await expect(messages.locator('.message-row')).toHaveCount(18)
+    await expect(messages.locator('.message-row')).toHaveCount(19)
     await messages.locator('.message-scroll').evaluate(element => { element.scrollTop = 0; element.dispatchEvent(new Event('scroll')) })
     await expect(messages.getByRole('button', { name: '最新へ' })).toBeVisible()
     await page.waitForTimeout(1700)

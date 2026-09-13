@@ -1,8 +1,22 @@
 import { describe, expect, it } from 'vitest'
 import { readFileSync } from 'node:fs'
-import { receivedMessageDisplay } from '../../src/shared/conversation'
+import { receivedMessageDisplay, sentMessageDisplay } from '../../src/shared/conversation'
 
 const situationMessage = readFileSync('tests/fixtures/situation-message.txt', 'utf8')
+
+describe('sent message display', () => {
+  const sent = { id: 'speech', type: 'dynamicToolCall', tool: 'sendMessage', status: 'completed', success: true, arguments: { text: 'おはようございます。\n今日はいい天気ですね。', volume: 'high' } }
+  it.each(['low', 'medium', 'high'] as const)('shows a successful %s speech with its original text', volume => {
+    const labels = { low: '小声', medium: '普通の声', high: '大声' }
+    expect(sentMessageDisplay({ ...sent, arguments: { ...sent.arguments, volume } })).toEqual({ label: `発言 · ${labels[volume]}`, text: sent.arguments.text })
+  })
+  it('does not present pending, failed, malformed or unrelated tool calls as delivered speech', () => {
+    for (const item of [
+      { ...sent, status: 'inProgress', success: null }, { ...sent, success: false }, { ...sent, status: 'failed' },
+      { ...sent, success: undefined }, { ...sent, arguments: {} }, { ...sent, tool: 'getSituation' }, { ...sent, type: 'mcpToolCall' }
+    ]) expect(sentMessageDisplay(item)).toBeNull()
+  })
+})
 
 describe('received message display', () => {
   it('renders the reported situation notification without nested JSON or memory source history', () => {

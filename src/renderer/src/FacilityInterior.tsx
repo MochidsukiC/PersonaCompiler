@@ -212,7 +212,7 @@ export function FacilityInterior({ facility, simulation, speech, onBack, onAgent
       <div className="interior-people">{people.map(a => <button key={a.id} aria-label={`施設内の${a.name}を選択`} className={selectedId === a.id ? 'selected' : ''} onClick={() => click.current(a.id)}>{a.name} <span>{describe(a)}</span>{a.activity === 'sleeping' && <small>睡眠中</small>}</button>)}</div>
       {selected && <p data-testid="voice-recipients">{selected.name}の声が届く相手: {recipients.map(id => people.find(a => a.id === id)!.name).join('、') || 'なし'}{selected.position && homeAt(facility, selected.position) && '（同じ家の中のみ）'}</p>}
       <details><summary>座標の用途 · {facility.layout?.regions.length ?? 0}領域</summary>{facility.layout?.regions.map(r => <p key={r.id}>{r.name}: {r.description} · ({r.bounds.min.x},{r.bounds.min.y},{r.bounds.min.z})〜({r.bounds.max.x},{r.bounds.max.y},{r.bounds.max.z})</p>)}</details>
-      {facility.type === 'residential' && <small>家内の声は外へ漏れません。屋外の声は家内へ届きます。</small>}
+      {facility.type === 'residential' && <small>家の内外・別の家の間では、声量によらず声は届きません。</small>}
       {!facility.layout && <p>施設モデルが内部を準備しています。</p>}
     </div>
   </section>
