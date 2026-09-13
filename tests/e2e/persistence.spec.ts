@@ -19,7 +19,7 @@ test('real worker saves, cancels exit on disk failure, retries, and restores a c
     await expect(page.getByTestId('persistence-status')).toContainText('保存済み')
     const snapshot = await page.evaluate(() => window.persona.snapshot())
     run = snapshot.root
-    await page.getByRole('button', { name: '今すぐ保存' }).click()
+    await page.evaluate(() => window.persona.saveNow())
     await expect(page.getByTestId('persistence-status')).toContainText('保存済み')
     await rename(path.join(run, 'persistence'), path.join(run, 'saved-persistence'))
     await writeFile(path.join(run, 'persistence'), 'fixture directory obstruction'); blocked = true

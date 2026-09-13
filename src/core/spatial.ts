@@ -50,7 +50,7 @@ export function audible(facility: LifeFacility, source: Voxel, target: Voxel, vo
 export function speechRecipients(facility: LifeFacility, source: LifeActor, actors: LifeActor[], voice: Voice): string[] {
   if (!source.position) throw new LifeRuleError(`発話者の座標が未設定です: ${source.id}`)
   const position = source.position
-  return actors.filter(a => a.id !== source.id && a.locationId === source.locationId && a.activity !== 'sleeping' && a.activity !== 'dead' && a.position && audible(facility, position, a.position, voice)).map(a => a.id)
+  return actors.filter(a => a.id !== source.id && a.locationId === source.locationId && a.activity !== 'sleeping' && a.activity !== 'dead' && !(a.activity === 'ended' && a.nextFacilityId) && a.position && audible(facility, position, a.position, voice)).map(a => a.id)
 }
 export function households(population: Population) {
   return [...new Set(population.npcs.map(n => n.householdId))].map(id => ({ id, members: population.npcs.filter(n => n.householdId === id).map(n => ({ id: n.id, name: n.name, age: n.age })) }))

@@ -24,7 +24,7 @@ test('shows ages, deceased residents, home progress and automatically generated 
       for (const channel of ['snapshot', 'preview', 'conversation']) ipcMain.removeHandler(`persona:${channel}`)
       ipcMain.handle('persona:snapshot', () => snapshot)
       ipcMain.handle('persona:preview', (_event, relative) => ({ path: relative, content: '生成済みの人物パッケージ', hash: 'fixture', kind: 'text' }))
-      ipcMain.handle('persona:conversation', () => [{ id: 'old-turn', status: 'completed', items: [{ id: 'message', type: 'agentMessage', text: 'この町で暮らしました。' }] }])
+      ipcMain.handle('persona:conversation', () => ({ cursor: 'fixture', reset: true, turns: [{ id: 'old-turn', status: 'completed', items: [{ id: 'message', type: 'agentMessage', text: 'この町で暮らしました。' }] }] }))
       snapshot.version++
       BrowserWindow.getAllWindows()[0].webContents.send('persona:event', { type: 'workspace', snapshot })
     }, { original, preparation: emptyPreparation(), map: draft.map, lifecycle })

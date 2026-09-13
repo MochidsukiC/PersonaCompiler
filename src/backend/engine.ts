@@ -1,4 +1,5 @@
 import { ParentProduction } from './production'
+import { ConversationCache } from './conversation-cache'
 import { compilationSchema, productionOperationSchema, characterPackageSchema, type ProductionOperation } from '../core/compiler-contracts'
 import { StandardCompilerPrompts, compilerInputSchema, validateCharacterPackage, type CompilerInput, type CompilerPromptProvider } from '../core/compiler'
 import { identitySchema, type Birth, type Resident } from '../core/lifecycle-contracts'
@@ -51,6 +52,8 @@ export class BackendEngine {
   private lastLifeStage: import('../core/life-contracts').SimulationSnapshot['stage'] | undefined
   private world: RunState = initialState('initializing')
   private readonly activeTurns = new Map<string, string>()
+  private readonly terminalAttachments = new Map<string, Promise<void>>()
+  private readonly conversations = new ConversationCache(threadId => this.runtime.conversation(threadId))
   private readonly unsubscribe: () => void
   private readonly unsubscribeExit: () => void
   private view: BackendSnapshot = { connection: 'disconnected', authMode: null, authenticated: false, login: null, models: [], settings: null, preparation: emptyPreparation(), error: null }
@@ -164,6 +167,7 @@ export class BackendEngine {
     } else await this.createRun()
   }
   private async createRun(): Promise<void> {
+    this.conversations.clear()
     const runId = newId()
     this.world = initialState(runId)
     this.life = null; this.lifeVersion = 1; delete this.view.simulation
@@ -488,7 +492,6 @@ NPCのモデルAutoとeffort Autoは独立しています。effortはsettings.np
     binding.creation = 'created'; await this.persist()
     await this.runtime.seed(binding, seed)
     binding.seedPersisted = true; await this.persist()
-    await this.sessions.attach(binding)
     binding.creation = 'initialized'; await this.persist()
     if (!this.life || binding.role !== 'npc' || this.people().some(n => n.id === binding.agentId)) await this.publishWorld()
   }
@@ -527,6 +530,7 @@ NPCのモデルAutoとeffort Autoは独立しています。effortはsettings.np
   }
 
   private async restoreSessions(): Promise<void> {
+    this.conversations.clear()
     if (!this.view.preparation.sessions.length) return
     validateSettings(this.settings(), this.view.models)
     const p = this.view.preparation
@@ -548,7 +552,6 @@ NPCのモデルAutoとeffort Autoは独立しています。effortはsettings.np
       if (npc && binding.role === 'npc') binding.effort = resolveEffort(requireModel(this.view.models, binding.modelId), this.settings().npc.effort, npc.age).effective
       await this.runtime.resume(binding, instructions)
       if (npc && binding.role === 'npc') this.runtime.setThreadPolicy?.(binding, this.life?.snapshot().stage === 'ended')
-      await this.sessions.attach(binding)
       binding.creation = 'initialized'
     }
     await this.persist()
@@ -591,7 +594,7 @@ NPCのモデルAutoとeffort Autoは独立しています。effortはsettings.np
         return this.runtime.interrupt(value.threadId, turnId)
       },
       history: id => this.runtime.history(binding(id).threadId!),
-      terminalInput: (id, text) => this.sessions.input(binding(id).sessionId, text),
+      terminalInput: async (id, text) => { const sessionId = binding(id).sessionId; await this.terminalSnapshot(sessionId); await this.sessions.input(sessionId, text) },
       save: async checkpoint => {
         const canonical = lifeCheckpointSchema.parse(checkpoint)
         await workspace.write('simulation/checkpoint.json', JSON.stringify({ hash: digest(JSON.stringify(canonical)), checkpoint: canonical }, null, 2))
@@ -648,6 +651,10 @@ NPCのモデルAutoとeffort Autoは独立しています。effortはsettings.np
 
   private notification(event: RpcNotification): void {
     if (this.closing) return
+    if (event.method.startsWith('item/') || event.method.startsWith('turn/') || event.method.startsWith('thread/')) {
+      const value = z.object({ threadId: z.string() }).safeParse(event.params)
+      if (value.success) this.conversations.invalidate(value.data.threadId)
+    }
     if (this.life && ['turn/started', 'turn/completed', 'item/completed'].includes(event.method)) {
       const value = z.object({ threadId: z.string() }).safeParse(event.params)
       const binding = value.success ? this.view.preparation.sessions.find(s => s.threadId === value.data.threadId && s.role !== 'parent') : undefined
@@ -742,7 +749,7 @@ NPCのモデルAutoとeffort Autoは独立しています。effortはsettings.np
       const npc = this.people().find(n => n.id === binding.agentId)
       const facility = p.draft?.specification.town.facilities.find(f => `facility-${f.id}` === binding.agentId)
       if (npc) positions[binding.agentId] = npc.locationId
-      return { id: binding.agentId, sessionId: binding.sessionId, parentId: binding.role === 'parent' ? null : 'parent', role: binding.role, name: npc?.name ?? facility?.name ?? 'オーケストレーター', color: binding.role === 'npc' ? '#9dbafa' : binding.role === 'facility' ? '#8bcdb0' : '#b0c0f4', status: this.life?.isDead(binding.agentId) || !this.sessions.isRunning(binding.sessionId) ? 'ended' : binding.threadId && this.activeTurns.has(binding.threadId) ? 'running' : 'idle' }
+      return { id: binding.agentId, sessionId: binding.sessionId, parentId: binding.role === 'parent' ? null : 'parent', role: binding.role, name: npc?.name ?? facility?.name ?? 'オーケストレーター', color: binding.role === 'npc' ? '#9dbafa' : binding.role === 'facility' ? '#8bcdb0' : '#b0c0f4', status: this.life?.isDead(binding.agentId) || (this.sessions.has(binding.sessionId) && !this.sessions.isRunning(binding.sessionId)) ? 'ended' : binding.threadId && this.activeTurns.has(binding.threadId) ? 'running' : 'idle' }
     })
     const simulation = this.life?.snapshot()
     if (simulation) {
@@ -783,6 +790,19 @@ NPCのモデルAutoとeffort Autoは独立しています。effortはsettings.np
     const turn = this.activeTurns.get(binding.threadId)
     if (turn) await this.runtime.interrupt(binding.threadId, turn)
   }
+  async terminalSnapshot(id: string) {
+    this.writable(); this.ensureConnected()
+    const binding = this.view.preparation.sessions.find(s => s.sessionId === id)
+    if (!binding?.threadId || !binding.seedPersisted) throw new Error(`保存済みConversationがありません: ${id}`)
+    if (this.life?.isDead(binding.agentId) || (binding.role === 'npc' && this.life?.snapshot().stage === 'ended')) throw new Error('終了した住民のConversationは閲覧専用です')
+    let pending = this.terminalAttachments.get(id)
+    if (!pending && !this.sessions.has(id)) {
+      pending = this.sessions.attach(binding)
+      this.terminalAttachments.set(id, pending)
+    }
+    if (pending) try { await pending } finally { if (this.terminalAttachments.get(id) === pending) this.terminalAttachments.delete(id) }
+    return this.sessions.snapshot(id)
+  }
   async terminalInput(id: string, data: string): Promise<void> {
     this.writable()
     const binding = this.view.preparation.sessions.find(s => s.sessionId === id)
@@ -792,11 +812,11 @@ NPCのモデルAutoとeffort Autoは独立しています。effortはsettings.np
     if (this.life && binding && data !== '\x03' && await this.life.bufferTerminal(binding.agentId, data)) return
     await this.sessions.input(id, data)
   }
-  async conversation(id: string) {
+  async conversation(id: string, cursor?: string) {
     this.ensureConnected()
     const binding = this.view.preparation.sessions.find(s => s.sessionId === id)
     if (!binding?.threadId) throw new Error(`Conversationがありません: ${id}`)
-    return this.runtime.conversation(binding.threadId)
+    return this.conversations.read(binding.threadId, cursor)
   }
   memoryInspection(id: string) { if (!this.life) throw new Error('生活ワールドがありません'); return this.life.memoryInspection(id) }
   memoryDetail(id: string, memoryId: string, revision: number) { if (!this.life) throw new Error('生活ワールドがありません'); return this.life.memoryDetail(id, memoryId, revision) }

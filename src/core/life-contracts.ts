@@ -55,11 +55,11 @@ export const lifeToolDescriptions: Record<LifeToolName, string> = {
   initializeFacility: '初期化時だけ使用する。承認された施設内の意味付き領域と住宅街の世帯別の家を確定する。boundsのmin/maxは両端を含む整数座標。',
   setInitialPosition: '初期化時または別施設へ入場したターン開始時に、自分の初期座標を選ぶ。',
   moveWithinFacility: '同じ施設内の指定した整数座標へ即時移動する。回数制限なし。家の出入りもこのToolを使う。',
-  moveToFacility: '次ターンの移動先施設を予約し、現在の活動を終了する。各世界ターンで1回だけ指定でき、実際の移動は次ターン開始時。',
+  moveToFacility: '移動先施設を予約し、現在の活動を終了する。他NPCには移動先にいるものとして表示され、入場位置は次ターン開始時に確定する。各世界ターンで1回だけ指定できる。',
   sendMessage: '同施設内へ発話する。lowは直線距離1、mediumは5、highは同じ家の中全体、屋外なら同施設の屋外全体。声量によらず家の内外・別の家の間では声は届かない。睡眠中には届かない。',
   useFacility: '現在いる施設へ利用内容を送る。回答は後から同じConversationへ届く。',
   completeFacilityUse: '施設利用への回答と施設の最新の公開状態を返す。requestIdはHarnessから受け取った利用要求のID。',
-  endTurn: '現在の世界ターンの活動を終了する。起きている間は届いた発話から活動を再開できる。',
+  endTurn: '現在地でこの世界ターンの活動を終了する。新着発話・施設回答・ユーザー入力への反応は次ターンまで停止する。',
   sleep: '現在の時間帯の活動を終了して眠る。同じConversationでCompactした後、次の世界ターン開始時に起床する。'
 }
 export function lifeTools(role: 'npc' | 'facility', memoryEnabled = false, lifecycleEnabled = false) {

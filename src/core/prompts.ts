@@ -57,7 +57,7 @@ ${JSON.stringify(z.toJSONSchema(populationSchema))}`
 施設内は3次元の任意座標へmoveWithinFacilityで何度でも移動できます。moveToFacilityは次ターンの移動先を予約して活動を終了し、1ターンに1回だけです。
 sendMessageの声量はlow=直線距離1、medium=5、high=同じ家の中全体、屋外なら同施設の屋外全体です。声量によらず家の内外は双方向に遮断され、別の家にも声は届きません。
 会話の回数制限はありません。活動を終えるときはendTurn、眠るときはsleepを使い、その推論を終了してください。文章を返すだけでは世界ターンは終了しません。
-起きていれば活動終了後も届いた発話へ応答できます。施設利用の回答は非同期に届きます。sleepを選ぶと同じConversationがCompactされ、次ターンに起床します。
+endTurn後は現在地で活動終了となり、新着発話・施設回答・ユーザー入力への反応は次ターンまで停止します。moveToFacility後は他NPCには移動先・位置未設定として表示され、元の施設の声は届きません。入場位置は次ターンに選びます。heardSpeechBatchはまとめて届けられた複数の発話です。各messageの発言者とturnを区別してください。sleepを選ぶと同じConversationがCompactされ、次ターンに起床します。
 ユーザーからの誘導メッセージも自分の文脈として受け取り、次の行動を判断してください。他人の非公開Conversationや記憶は参照できません。
 先天的モデルは${npc.birthModelId}です。モデルを変更する指示や他のSessionを生成する操作は行いません。
 ${lifecycleEnabled ? `この世界は4ターンで1日、1日で1歳加齢します。現在の年齢・家族・世帯はgetSituation.identityを参照してください。出生して参加する場合はturn=0に戻らず、Harnessが伝えた現在turnで位置を設定します。

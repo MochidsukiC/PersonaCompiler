@@ -13,6 +13,7 @@ import { lifecycleToolSchemas, identitySchema, type Birth, type Resident } from 
 import { initializeLifecycle, ageDay, endReason, marry, living, resident } from './lifecycle'
 
 const jobSchema = z.object({
+  batchId: z.string().optional(),
   homeRequestId: z.string().optional(),
   id: z.string(), agentId: z.string(), text: z.string(), kind: z.enum(['layout', 'position', 'activity', 'message', 'facility', 'reply', 'compact', 'user', 'consolidation', 'home', 'notice']),
   status: z.enum(['queued', 'deferred', 'requested', 'running', 'done', 'discarded']), turnId: z.string().nullable(), completed: z.boolean(), reminders: z.array(memoryReferenceSchema).optional(), consolidationError: z.string().optional()
@@ -135,7 +136,7 @@ export class LifeHarness {
       const next = transaction ? transaction.value : structuredClone(this.data)
       const result = work(transaction ? transaction.draft : next)
       if (this.memoryChanges.length || (transaction ? transaction.changed.size > 0 : JSON.stringify(next) !== JSON.stringify(this.data))) {
-        next.world.revision++
+        next.world = { ...next.world, revision: next.world.revision + 1 }
         for (const change of this.memoryChanges) if (change.ownerId && change.owner) {
           const o = change.owner
           next.world.memoryProgress = { ...next.world.memoryProgress, [change.ownerId]: { revision: o.revision, candidates: o.candidates.length, retained: o.records.length, reminders: o.records.filter(r => r.reminder?.status === 'pending').length, consolidation: o.consolidation, recalling: o.recalls.filter(r => ['requested', 'running'].includes(r.status)).length, error: o.recalls.find(r => ['failed', 'uncertain'].includes(r.status))?.error ?? null } }
@@ -155,16 +156,16 @@ export class LifeHarness {
   }
   private commitMemory(next: LifeCheckpoint): void {
     const history: LifeHistoryRecord[] = []
-    const oldJobs = new Map(this.data.jobs.map(job => [job.id, job]))
-    for (const job of next.jobs) {
-      if (!isDeepStrictEqual(oldJobs.get(job.id), job)) history.push({ kind: 'job', value: job })
+    if (next.jobs !== this.data.jobs) {
+      const oldJobs = new Map(this.data.jobs.map(job => [job.id, job]))
+      for (const job of next.jobs) if (!isDeepStrictEqual(oldJobs.get(job.id), job)) history.push({ kind: 'job', value: job })
+      next.jobs = next.jobs.filter(job => !['done', 'discarded'].includes(job.status))
     }
     const oldInteractions = new Map(this.data.interactions.map(item => [item.id, item]))
     for (const item of next.interactions) if (!isDeepStrictEqual(oldInteractions.get(item.id), item)) history.push({ kind: 'interaction', value: item })
     for (const [key, value] of Object.entries(next.receipts)) history.push({ kind: 'receipt', key, value })
     const lastEvent = this.data.world.events.at(-1)?.sequence ?? 0
     for (const event of next.world.events) if (event.sequence > lastEvent) history.push({ kind: 'event', value: event })
-    next.jobs = next.jobs.filter(job => !['done', 'discarded'].includes(job.status))
     next.interactions = next.interactions.filter(item => !item.done)
     next.receipts = {}; next.world.events = next.world.events.slice(-200)
     const patches: LifeChange['patches'] = []
@@ -175,6 +176,7 @@ export class LifeHarness {
     for (const key of Object.keys(next) as (keyof LifeCheckpoint)[]) {
       if (key === 'world' || key === 'receipts') continue
       if (key === 'jobs') {
+        if (next.jobs === this.data.jobs) continue
         next.jobs.forEach((job, index) => { if (!isDeepStrictEqual(this.data.jobs[index], job)) patches.push({ path: ['jobs', index], value: job }) })
         if (next.jobs.length !== this.data.jobs.length) patches.push({ path: ['jobs', 'length'], value: next.jobs.length })
         continue
@@ -196,7 +198,8 @@ export class LifeHarness {
     }
   }
   private enqueue(d: LifeCheckpoint, agentId: string, kind: Job['kind'], text: string, deferred = false): Job {
-    const job: Job = { id: unique(), agentId, kind, text, status: deferred ? 'deferred' : 'queued', turnId: null, completed: false }
+    const ended = d.world.phase === 'activity' && d.world.actors.some(a => a.id === agentId && a.activity === 'ended')
+    const job: Job = { id: unique(), agentId, kind, text, status: deferred || (ended && ['message', 'reply', 'user'].includes(kind)) ? 'deferred' : 'queued', turnId: null, completed: false }
     d.jobs.push(job)
     return job
   }
@@ -211,9 +214,16 @@ export class LifeHarness {
       facility, currentRegions: facility.layout?.regions.filter(region => actor.position && contains(region.bounds, actor.position)),
       ...(d.world.lifecycle ? { identity: resident(d.world.lifecycle, id), marriageProposals: d.world.lifecycle.proposals.filter(p => p.actorId === id || p.partnerId === id), homeRequests: d.world.lifecycle.homes.filter(h => h.sponsorId === id || h.members.includes(id)), birthPlans: d.world.lifecycle.births.filter(b => b.parents.includes(id)) } : {}),
       home: residential.layout?.homes.find(h => h.householdId === actor.householdId), homeLocationId: residential.locationId,
-      npcs: d.world.actors.filter(a => a.activity !== 'dead' && a.locationId === actor.locationId).map(a => ({ id: a.id, name: a.name, position: a.position, activity: a.activity })),
+      npcs: d.world.actors.filter(a => a.activity !== 'dead').map(a => {
+        const destination = a.id !== id && a.activity === 'ended' && a.nextFacilityId ? d.world.facilities.find(f => f.id === a.nextFacilityId) : undefined
+        return { id: a.id, name: a.name, position: destination ? null : a.position, activity: a.activity, locationId: destination?.locationId ?? a.locationId }
+      }).filter(a => a.locationId === actor.locationId),
       destinations: d.world.facilities.map(f => ({ id: f.id, name: f.name, locationId: f.locationId })),
       ...(this.cognition ? { memorySources: this.cognition.availableSources(id), memoryProgress: this.cognition.progress(id) } : {}) }
+  }
+  private endActivity(d: LifeCheckpoint, actor: LifeActor): void {
+    actor.activity = 'ended'
+    for (const job of d.jobs) if (job.agentId === actor.id && job.status === 'queued' && ['message', 'reply', 'user'].includes(job.kind)) job.status = 'deferred'
   }
   private event(d: LifeCheckpoint, actor: LifeActor, kind: SimulationSnapshot['events'][number]['kind'], text: string, recipients: string[] = []) {
     const event = { sequence: (d.world.events.at(-1)?.sequence ?? 0) + 1, turn: d.world.turn, kind, actorId: actor.id, text, recipients, locationId: actor.locationId, position: actor.position }
@@ -306,9 +316,10 @@ export class LifeHarness {
       const turns = await this.services.history(agentId)
       await this.update(d => {
         for (const job of d.jobs.filter(j => j.agentId === agentId && ['requested', 'running'].includes(j.status))) {
-          const turn = job.turnId ? turns.find(t => t.id === job.turnId) : turns.find(t => t.clientIds.includes(job.id))
+          const clientId = job.batchId ?? job.id
+          const turn = job.turnId ? turns.find(t => t.id === job.turnId) : turns.find(t => t.clientIds.includes(clientId))
           if (!turn) throw new LifeRuleError(`推論結果が未確定です。自動再送しません: ${agentId}/${job.id}`)
-          if (job.kind !== 'compact' && !turn.clientIds.includes(job.id)) throw new LifeRuleError(`メッセージの配信結果が未確定です。自動再送しません: ${agentId}/${job.id}`)
+          if (job.kind !== 'compact' && !turn.clientIds.includes(clientId)) throw new LifeRuleError(`メッセージの配信結果が未確定です。自動再送しません: ${agentId}/${job.id}`)
           job.turnId = turn.id
           if (turn.status === 'inProgress') throw new LifeRuleError(`前回の推論が実行中です: ${agentId}/${turn.id}`)
           if (job.kind === 'compact' && (turn.status !== 'completed' || !turn.compact)) throw new LifeRuleError(`Compactの成功を確認できません: ${agentId}/${turn.id}`)
@@ -482,31 +493,46 @@ export class LifeHarness {
         }
       }
       const requestedAgents = new Set(d.jobs.filter(j => j.status === 'requested').map(j => j.agentId))
+      const queues = new Map<string, Job[]>()
+      for (const job of d.jobs) if (job.status === 'queued') {
+        const queue = queues.get(job.agentId)
+        if (queue) queue.push(job); else queues.set(job.agentId, [job])
+      }
       for (const job of d.jobs.filter(j => j.status === 'queued')) {
+        if (job.status !== 'queued') continue
         const recipient = d.world.actors.find(a => a.id === job.agentId)
         if (recipient?.activity === 'sleeping' && ['message', 'reply', 'user'].includes(job.kind)) {
           job.status = job.kind === 'message' ? 'discarded' : 'deferred'
           continue
         }
         const active = d.active[job.agentId]
+        if (recipient?.activity === 'ended' && ['message', 'reply', 'user'].includes(job.kind)) { job.status = 'deferred'; continue }
         if (active && (!active.turnId || active.kind === 'compact' || job.kind === 'compact')) continue
         if (active && requestedAgents.has(job.agentId)) continue
         job.status = 'requested'
         requestedAgents.add(job.agentId)
-        if (recipient?.activity === 'ended' && ['message', 'reply', 'user'].includes(job.kind)) recipient.activity = 'active'
         if (active) job.turnId = active.turnId
         if (!active) d.active[job.agentId] = { turnId: null, kind: job.kind === 'compact' ? 'compact' : 'normal', compactSeen: false }
         if (this.cognition && recipient && recipient.activity !== 'sleeping') {
           const reminders = this.reminders(d, recipient)
           if (reminders.length) job.reminders = [...(job.reminders ?? []), ...reminders]
         }
-        actions.push({ job: plainLifeValue(job), activeTurn: active?.turnId ?? null, steer: !!active })
+        const batch = [job]
+        if (job.kind === 'message') {
+          let characters = job.text.length
+          for (const queued of queues.get(job.agentId)!.slice(1)) {
+            if (queued.status !== 'queued' || queued.kind !== 'message' || batch.length >= 32 || characters + queued.text.length > 32000) break
+            queued.status = 'requested'; queued.batchId = job.id; queued.turnId = job.turnId
+            batch.push(queued); characters += queued.text.length
+          }
+        }
+        actions.push({ job: { ...plainLifeValue(job), ...(batch.length > 1 ? { text: JSON.stringify({ kind: 'heardSpeechBatch', turn: d.world.turn, messages: batch.map(j => ({ deliveryId: j.id, message: j.text })) }) } : {}) }, activeTurn: active?.turnId ?? null, steer: !!active })
       }
       const due = d.world.lifecycle && d.world.stage === 'running' && d.world.phase === 'between'
         ? d.world.lifecycle.births.filter(b => b.status === 'scheduled' && b.dueDay <= d.world.lifecycle!.processedDay) : []
       for (const b of due) b.status = 'requested'
       if (d.world.phase === 'activity' && d.world.stage === 'running') for (const [id, text] of Object.entries(d.terminalInputs)) {
-        if (this.actor(d, id).activity === 'sleeping' || d.terminalWrites[id]) continue
+        if (['sleeping', 'ended'].includes(this.actor(d, id).activity) || d.terminalWrites[id]) continue
         d.terminalWrites[id] = text; delete d.terminalInputs[id]; writes.push([id, text])
       }
       return { actions, births: plainLifeValue(due), writes }
@@ -535,8 +561,9 @@ export class LifeHarness {
       catch (error) {
         if (!(error instanceof TurnAlreadyEndedError)) throw error
         await this.update(d => {
-          const current = d.jobs.find(j => j.id === job.id)!
-          current.status = 'queued'; current.turnId = null; current.completed = false
+          for (const current of d.jobs.filter(j => j.id === job.id || j.batchId === job.id)) {
+            current.status = 'queued'; current.turnId = null; current.completed = false; delete current.batchId
+          }
           if (d.active[job.agentId]?.turnId === activeTurn) delete d.active[job.agentId]
         })
         return
@@ -544,10 +571,11 @@ export class LifeHarness {
     }
     else turnId = await this.services.start(job.agentId, text, job.id)
     await this.update(d => {
-      const current = d.jobs.find(j => j.id === job.id)!
-      if (current.status === 'done') return
-      current.status = current.completed ? 'done' : 'running'
-      if (turnId) current.turnId = turnId
+      for (const current of d.jobs.filter(j => j.id === job.id || j.batchId === job.id)) {
+        if (current.status === 'done') continue
+        current.status = current.completed ? 'done' : 'running'
+        if (turnId) current.turnId = turnId
+      }
       const active = d.active[job.agentId]
       if (active && turnId) active.turnId = turnId
     })
@@ -567,17 +595,13 @@ export class LifeHarness {
         if (existing?.turnId && existing.turnId !== turn.id) throw new LifeRuleError(`同一Conversationに推論が競合しました: ${agentId}`)
         d.active[agentId] = { turnId: turn.id, kind: existing?.kind ?? 'normal', compactSeen: false }
         for (const job of d.jobs.filter(j => j.agentId === agentId && ['requested', 'running'].includes(j.status) && !j.turnId)) job.turnId = turn.id
-        const actor = d.world.actors.find(a => a.id === agentId)
-        if (!existing && actor?.activity === 'ended' && d.world.phase === 'activity') actor.activity = 'active'
       } else if (method === 'item/completed') {
         const value = z.object({ item: z.object({ type: z.string(), clientId: z.string().nullable().optional() }) }).parse(params)
         if (value.item.type === 'contextCompaction' && d.active[agentId]?.kind === 'compact') d.active[agentId].compactSeen = true
         if (value.item.type === 'userMessage' && ['activity', 'between'].includes(d.world.phase)) {
           const actor = d.world.actors.find(a => a.id === agentId)
-          const delivered = d.jobs.find(j => j.id === value.item.clientId && j.agentId === agentId)
-          if (this.cognition && actor && delivered && ['message', 'reply', 'notice'].includes(delivered.kind)) this.memoryChanges.push(this.cognition.source(agentId, `delivery:${delivered.id}`, d.world.turn, delivered.text, 'received'))
-          const kind = d.jobs.find(j => j.id === value.item.clientId)?.kind ?? (value.item.clientId ? this.completedKinds.get(value.item.clientId) : undefined)
-          if (d.world.phase === 'activity' && actor?.activity === 'ended' && (!kind || ['message', 'reply', 'user'].includes(kind))) actor.activity = 'active'
+          const delivered = d.jobs.filter(j => value.item.clientId && (j.id === value.item.clientId || j.batchId === value.item.clientId) && j.agentId === agentId)
+          for (const job of delivered) if (this.cognition && actor && ['message', 'reply', 'notice'].includes(job.kind)) this.memoryChanges.push(this.cognition.source(agentId, `delivery:${job.id}`, d.world.turn, job.text, 'received'))
         }
       } else if (method === 'turn/completed') {
         const { turn } = z.object({ turn: z.object({ id: z.string(), status: z.string(), error: z.object({ message: z.string() }).nullable().optional() }) }).parse(params)
@@ -618,7 +642,7 @@ export class LifeHarness {
   async bufferTerminal(agentId: string, text: string): Promise<boolean> {
     const actor = this.data.world.actors.find(a => a.id === agentId)
     if (actor?.activity === 'dead') throw new LifeRuleError(`死亡した住民へ入力できません: ${agentId}`)
-    if (!actor || (actor.activity !== 'sleeping' && actor.compact !== 'running')) return false
+    if (!actor || (!['sleeping', 'ended'].includes(actor.activity) && actor.compact !== 'running')) return false
     await this.update(d => { d.terminalInputs[agentId] = (d.terminalInputs[agentId] ?? '') + text })
     return true
   }
@@ -629,7 +653,7 @@ export class LifeHarness {
       const r = record.reminder
       return r?.status === 'pending' && r.notifiedTurn !== d.world.turn && (r.afterTurn === null || d.world.turn >= r.afterTurn) &&
         (r.facilityId === null || this.facility(d, actor.locationId).id === r.facilityId) &&
-        (r.personId === null || d.world.actors.some(a => a.id === r.personId && a.activity !== 'dead' && a.locationId === actor.locationId))
+        (r.personId === null || d.world.actors.some(a => a.id === r.personId && a.activity !== 'dead' && (a.activity === 'ended' && a.nextFacilityId ? d.world.facilities.find(f => f.id === a.nextFacilityId)?.locationId : a.locationId) === actor.locationId))
     })
     if (!eligible.length) return []
     const recalled: MemoryRecord[] = []
@@ -795,7 +819,6 @@ export class LifeHarness {
       request.done = true; facility.layout.publicState = value.publicState
       const actor = this.actor(d, request.npcId)
       this.enqueue(d, actor.id, 'reply', JSON.stringify({ kind: 'facilityResponse', facilityId: facility.id, text: value.text }), actor.activity === 'sleeping')
-      if (actor.activity === 'ended') actor.activity = 'active'
       this.event(d, actor, 'facility', `${facility.name}: ${value.text}`, [actor.id])
       return reply({ delivered: request.id })
     }
@@ -842,7 +865,7 @@ export class LifeHarness {
         if (actor.nextFacilityId) throw new LifeRuleError('このターンの施設間移動は既に予約されています')
         const target = d.world.facilities.find(f => f.id === value.facilityId)
         if (!target || target.locationId === actor.locationId) throw new LifeRuleError('移動先には別の施設を指定してください')
-        actor.nextFacilityId = target.id; actor.activity = 'ended'; this.event(d, actor, 'travel', `次ターンに${target.name}へ移動します`)
+        actor.nextFacilityId = target.id; this.endActivity(d, actor); this.event(d, actor, 'travel', `${target.name}へ移動しました。入場位置は次ターンに確定します`)
         return reply({ reserved: target.id, endTurn: true })
       }
       case 'sendMessage': {
@@ -851,8 +874,6 @@ export class LifeHarness {
         const event = this.event(d, actor, 'speech', value.text, recipients)
         d.world.events[d.world.events.length - 1] = { ...event, volume: value.volume }
         for (const id of recipients) {
-          const recipient = this.actor(d, id)
-          if (recipient.activity === 'ended') recipient.activity = 'active'
           this.enqueue(d, id, 'message', JSON.stringify({ kind: 'heardSpeech', eventId: event.sequence, turn: d.world.turn, speaker: { id: actor.id, name: actor.name, position: actor.position }, volume: value.volume, text: value.text }))
         }
         return reply({ eventId: event.sequence, recipients })
@@ -866,7 +887,7 @@ export class LifeHarness {
         return reply({ requestId: request.id, instruction: '受け付けました。回答は後から届きます。' })
       }
       case 'endTurn':
-        lifeToolSchemas.endTurn.parse(input); actor.activity = 'ended'; this.event(d, actor, 'end', '活動を終了しました'); return reply({ endTurn: true })
+        lifeToolSchemas.endTurn.parse(input); this.endActivity(d, actor); this.event(d, actor, 'end', '活動を終了しました'); return reply({ endTurn: true })
       case 'sleep':
         if (this.cognition) this.memoryChanges.push(this.cognition.prepare(agentId, owner => { owner.consolidation = 'pending' }))
         lifeToolSchemas.sleep.parse(input); actor.activity = 'sleeping'; actor.wakeAt = d.world.turn + 1; actor.compact = 'pending'; this.event(d, actor, 'sleep', '次ターンまで眠ります'); return reply({ sleeping: true, wakeAt: actor.wakeAt, instruction: 'この推論を終了してください。HarnessがCompactを実行します。' })

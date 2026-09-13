@@ -1,8 +1,8 @@
-import { useEffect, useLayoutEffect, useRef, useState } from 'react'
+import { memo, useEffect, useLayoutEffect, useRef, useState } from 'react'
 import { ArrowDown, MessageCircle, Wrench } from 'lucide-react'
 import type { AgentDescriptor } from '../../shared/contracts'
 import type { ConversationItem, ConversationTurn } from '../../shared/conversation'
-import { receivedMessageDisplay, sentMessageDisplay } from '../../shared/conversation'
+import { mergeConversation, receivedMessageDisplay, sentMessageDisplay } from '../../shared/conversation'
 import './messages.css'
 
 const statuses: Record<string, string> = { inProgress: '実行中', completed: '完了', failed: '失敗', interrupted: '中断', declined: '拒否' }
@@ -43,7 +43,18 @@ function MessageItem({ item, agent, turnStatus }: { item: ConversationItem; agen
   </div>}</>
 }
 
-export function MessageView({ agent, connected }: { agent: AgentDescriptor; connected: boolean }) {
+function sameAgent(previous: AgentDescriptor, next: AgentDescriptor): boolean {
+  return previous.sessionId === next.sessionId && previous.name === next.name && previous.role === next.role && previous.color === next.color
+}
+const TurnView = memo(function TurnView({ turn, index, agent }: { turn: ConversationTurn; index: number; agent: AgentDescriptor }) {
+  return <div className="message-turn">
+    <div className="message-divider"><span>{turn.startedAt != null ? new Date(turn.startedAt * 1000).toLocaleString('ja-JP') : `会話 ${index + 1}`} · {statuses[turn.status] ?? turn.status}</span></div>
+    {turn.items.map(item => <MessageItem key={item.id} item={item} agent={agent} turnStatus={turn.status} />)}
+    {turn.error && <p className="message-notice" role="alert">{turn.error.message}</p>}
+  </div>
+}, (previous, next) => previous.turn === next.turn && previous.index === next.index && sameAgent(previous.agent, next.agent))
+
+export const MessageView = memo(function MessageView({ agent, connected }: { agent: AgentDescriptor; connected: boolean }) {
   const [turns, setTurns] = useState<ConversationTurn[] | null>(null)
   const [error, setError] = useState<string | null>(null)
   const [generation, setGeneration] = useState(0)
@@ -53,12 +64,14 @@ export function MessageView({ agent, connected }: { agent: AgentDescriptor; conn
   useEffect(() => {
     if (!connected) return
     let cancelled = false
+    let cursor: string | undefined
     let timer: ReturnType<typeof setTimeout> | undefined
     const read = async () => {
       try {
-        const value = await window.persona.conversation(agent.sessionId)
+        const value = await window.persona.conversation(agent.sessionId, cursor)
         if (cancelled) return
-        setTurns(value); setError(null)
+        cursor = value.cursor
+        setTurns(previous => mergeConversation(previous ?? [], value)); setError(null)
         timer = setTimeout(() => void read(), 1500)
       } catch (reason) {
         if (!cancelled) setError(reason instanceof Error ? reason.message : String(reason))
@@ -85,13 +98,9 @@ export function MessageView({ agent, connected }: { agent: AgentDescriptor; conn
     }}>
       {turns === null && connected && !error && <p className="message-empty">履歴を読み込んでいます…</p>}
       {turns?.length === 0 && <div className="message-empty"><MessageCircle size={28} /><p>まだメッセージはありません</p><small>会話が始まると、ここに表示されます。</small></div>}
-      {turns?.map((turn, index) => <div className="message-turn" key={turn.id}>
-        <div className="message-divider"><span>{turn.startedAt != null ? new Date(turn.startedAt * 1000).toLocaleString('ja-JP') : `会話 ${index + 1}`} · {statuses[turn.status] ?? turn.status}</span></div>
-        {turn.items.map(item => <MessageItem key={item.id} item={item} agent={agent} turnStatus={turn.status} />)}
-        {turn.error && <p className="message-notice" role="alert">{turn.error.message}</p>}
-      </div>)}
+      {turns?.map((turn, index) => <TurnView key={turn.id} turn={turn} index={index} agent={agent} />)}
     </div>
     {!following && <button className="message-latest" onClick={latest}><ArrowDown size={13} />最新へ</button>}
     <div className="message-footer">メッセージの入力はCodexビューから</div>
   </div>
-}
+}, (previous, next) => previous.connected === next.connected && sameAgent(previous.agent, next.agent))

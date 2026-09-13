@@ -162,7 +162,7 @@ it('runs five real NPC conversations and four facilities through a day with hous
     expect(saved).not.toBeNull()
     for (const b of bindings) {
       const history = await runtime.history(b.threadId!)
-      for (const job of harness.checkpoint().jobs.filter(j => j.agentId === b.agentId && j.status === 'done' && j.kind !== 'compact')) expect(history.find(t => t.id === job.turnId)?.clientIds).toContain(job.id)
+      for (const job of harness.checkpoint().jobs.filter(j => j.agentId === b.agentId && j.status === 'done' && j.kind !== 'compact')) expect(history.find(t => t.id === job.turnId)?.clientIds).toContain(job.batchId ?? job.id)
     }
     for (const b of bindings) { expect(terminals.isRunning(b.sessionId)).toBe(true); expect((await terminals.snapshot(b.sessionId)).data).toContain('Codex') }
     await writeFile(path.join(root, 'acceptance.json'), JSON.stringify({ calls, clocks: [...clocks], compactCount, bindings, errors }, null, 2))

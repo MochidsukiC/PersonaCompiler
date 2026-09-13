@@ -4,6 +4,7 @@ import { audible, speechRecipients, validateLayout, validateLifeSpecification } 
 import type { FacilityLayout, LifeFacility, SimulationSnapshot, Voxel } from '../../src/core/life-contracts'
 import { draft, population } from './fixtures'
 import type { LifeChange } from '../../src/core/persistence'
+import { NpcMemoryStore } from '../../src/core/memory-store'
 
 const people = structuredClone(population)
 people.npcs.forEach((n, i) => { n.householdId = i < 2 ? 'family-a' : i < 4 ? 'family-b' : 'single' })
@@ -93,6 +94,58 @@ async function call(harness: LifeHarness, id: string, tool: string, args: unknow
 }
 
 describe('Residential space', () => {
+  it('projects departed residents into the destination with unset coordinates', async () => {
+    const original = await setup()
+    const saved = original.harness.checkpoint()
+    saved.world.actors[2].locationId = 'school'
+    const { harness } = await setup(8, saved)
+    await harness.start(true); await active(harness)
+    await call(harness, 'npc0', 'moveToFacility', { facilityId: 'school' })
+    const situation = JSON.parse((await call(harness, 'npc2', 'getSituation')).contentItems[0].text)
+    expect(situation.npcs.find((npc: { id: string }) => npc.id === 'npc0')).toMatchObject({ locationId: 'school', position: null, activity: 'ended' })
+    expect(harness.snapshot().actors[0]).toMatchObject({ locationId: 'home', position: positions[0], nextFacilityId: 'school' })
+  })
+  it('batches queued speech with individual persisted delivery and memory evidence IDs', async () => {
+    const original = await setup()
+    await original.harness.start(true); await active(original.harness)
+    await original.harness.pause(); await original.harness.drain()
+    const saved = original.harness.checkpoint()
+    saved.jobs.push(...Array.from({ length: 40 }, (_, i) => ({ id: `delivery-${i}`, agentId: 'npc1', kind: 'message' as const, status: 'queued' as const, turnId: null, completed: false, text: JSON.stringify({ kind: 'heardSpeech', eventId: i, turn: 1, speaker: { id: 'npc0', name: '話者', position: positions[0] }, volume: 'low', text: `発言${i}` }) })))
+    saved.cognition = new NpcMemoryStore('batch', people.npcs.map(n => n.id)).snapshot()
+    const changes: LifeChange[] = []
+    const services = Object.assign(new Services(), {
+      memory: { initialize: () => undefined, changed: (change: LifeChange) => { changes.push(change) } },
+      cognition: { runId: 'batch', match: async () => [] }
+    })
+    const { harness } = await setup(8, saved, services)
+    await harness.resume(true); await harness.drain()
+    const batches = [...services.starts, ...services.steers].filter(s => s.agentId === 'npc1').map(s => JSON.parse(s.text))
+    expect(batches.map(b => b.messages.length)).toEqual([32, 8])
+    expect(batches.flatMap(b => b.messages.map((m: { deliveryId: string }) => m.deliveryId))).toEqual(Array.from({ length: 40 }, (_, i) => `delivery-${i}`))
+    const jobs = harness.checkpoint().jobs.filter(j => j.kind === 'message')
+    expect(jobs).toHaveLength(40)
+    expect(jobs.every(j => j.status === 'running')).toBe(true)
+    expect(jobs.filter(j => !j.batchId).map(j => j.id)).toEqual(['delivery-0', 'delivery-32'])
+    for (const clientId of ['delivery-0', 'delivery-32']) harness.notify('npc1', 'item/completed', { item: { type: 'userMessage', clientId } })
+    await harness.drain()
+    const sources = changes.flatMap(c => c.history).filter(r => r.kind === 'memorySource')
+    expect(sources).toHaveLength(40)
+    expect(sources.every(r => r.kind === 'memorySource' && r.value.ownerId === 'npc1')).toBe(true)
+    services.finish('npc1'); await harness.drain()
+    expect(harness.checkpoint().jobs.some(j => j.kind === 'message')).toBe(false)
+  })
+  it('does not resend an uncertain speech batch after restoration', async () => {
+    const original = await setup()
+    await original.harness.start(true); await active(original.harness)
+    await original.harness.pause(); await original.harness.drain()
+    const saved = original.harness.checkpoint()
+    saved.active.npc1 = { turnId: null, kind: 'normal', compactSeen: false }
+    saved.jobs.push(...[0, 1].map(i => ({ id: `unknown-${i}`, ...(i ? { batchId: 'unknown-0' } : {}), agentId: 'npc1', kind: 'message' as const, status: 'requested' as const, turnId: null, completed: false, text: `発言${i}` })))
+    const { harness, services } = await setup(8, saved)
+    await expect(harness.resume()).rejects.toThrow()
+    expect(services.starts).toEqual([])
+    expect(services.steers).toEqual([])
+  })
   it('requires a residential facility, dimensions and a supported end condition', () => {
     const spec = structuredClone(draft.specification)
     spec.town.facilities = spec.town.facilities.filter(f => f.type !== 'residential')
@@ -236,7 +289,7 @@ describe('Autonomous life harness', () => {
     release()
     await vi.waitFor(() => expect(harness.snapshot().stage).toBe('paused'))
   })
-  it('reactivates an ended actor when a steered message is consumed after its last action', async () => {
+  it('keeps a departed actor ended when an already steered message is consumed', async () => {
     const { harness, services } = await setup()
     await harness.start(true); await active(harness)
     await call(harness, 'npc1', 'sendMessage', { text: 'あとで一言', volume: 'low' })
@@ -244,9 +297,13 @@ describe('Autonomous life harness', () => {
     await call(harness, 'npc0', 'moveToFacility', { facilityId: 'school' })
     const message = harness.checkpoint().jobs.find(j => j.kind === 'message' && j.agentId === 'npc0')!
     harness.notify('npc0', 'item/completed', { item: { type: 'userMessage', clientId: message.id } })
-    await vi.waitFor(() => expect(harness.snapshot().actors[0].activity).toBe('active'))
-    expect((await call(harness, 'npc0', 'sendMessage', { text: '返事', volume: 'low' })).success).toBe(true)
+    await harness.drain()
+    expect(harness.snapshot().actors[0].activity).toBe('ended')
+    expect((await call(harness, 'npc0', 'sendMessage', { text: '返事', volume: 'low' })).success).toBe(false)
     expect(harness.snapshot().actors[0].nextFacilityId).toBe('school')
+    const situation = JSON.parse((await call(harness, 'npc1', 'getSituation')).contentItems[0].text)
+    expect(situation.npcs.some((npc: { id: string }) => npc.id === 'npc0')).toBe(false)
+    expect(speechRecipients(residential, harness.snapshot().actors[1], harness.snapshot().actors, 'high')).not.toContain('npc0')
   })
   it('does not apply a replayed completion to a newer Compact', async () => {
     const { harness, services } = await setup()
@@ -293,17 +350,19 @@ describe('Autonomous life harness', () => {
     expect((await call(harness, 'npc0', 'moveWithinFacility', { position: { x: 30, y: 0, z: 0 } })).success).toBe(false)
     expect(harness.snapshot().actors[0].position).toEqual(harness.snapshot().actors[1].position)
   })
-  it('freezes speech recipients, reactivates ended listeners and never reveals other facilities in situation data', async () => {
+  it('defers speech for ended listeners until the next turn and keeps recipient records fixed', async () => {
     const { harness, services } = await setup()
     await harness.start(true); await active(harness)
     await call(harness, 'npc1', 'endTurn')
     await call(harness, 'npc0', 'sendMessage', { text: '家の中の会話', volume: 'high' })
     const speech = harness.snapshot().events.at(-1)!
     expect(speech.recipients).toEqual(['npc1'])
-    expect(harness.snapshot().actors[1].activity).toBe('active')
-    await call(harness, 'npc1', 'moveWithinFacility', { position: { x: 20, y: 20, z: 2 } })
+    expect(harness.snapshot().actors[1].activity).toBe('ended')
+    expect((await call(harness, 'npc1', 'moveWithinFacility', { position: { x: 20, y: 20, z: 2 } })).success).toBe(false)
     expect(harness.snapshot().events.find(e => e.sequence === speech.sequence)!.recipients).toEqual(['npc1'])
-    await vi.waitFor(() => expect(services.steers.some(s => s.agentId === 'npc1' && s.text.includes('家の中の会話'))).toBe(true))
+    await harness.drain()
+    expect(services.steers.some(s => s.agentId === 'npc1')).toBe(false)
+    expect(harness.checkpoint().jobs.find(j => j.kind === 'message')?.status).toBe('deferred')
     const situation = JSON.parse((await call(harness, 'npc0', 'getSituation')).contentItems[0].text)
     expect(situation.npcs).toHaveLength(5)
     expect(situation.home.householdId).toBe('family-a')
@@ -311,6 +370,12 @@ describe('Autonomous life harness', () => {
     const actors = harness.snapshot().actors
     actors[1].activity = 'sleeping'; actors[2].locationId = 'school'
     expect(speechRecipients(residential, actors[4], actors, 'high')).toEqual([])
+    for (const id of ['npc0', 'npc2', 'npc3', 'npc4']) await call(harness, id, 'endTurn')
+    for (const actor of harness.snapshot().actors) services.finish(actor.id)
+    await vi.waitFor(() => expect(harness.snapshot().stage).toBe('paused'))
+    await harness.resume(true)
+    await vi.waitFor(() => expect(services.starts.some(s => s.agentId === 'npc1' && s.text.includes('家の中の会話'))).toBe(true))
+    expect(harness.snapshot().turn).toBe(2)
   })
   it('sleeps exactly one world turn, compacts once and executes one reserved facility transfer at the next boundary', async () => {
     const { harness, services } = await setup()

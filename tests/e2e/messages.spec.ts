@@ -43,7 +43,7 @@ test('NPC message history, tool details, view switching, scrolling and explicit 
       ipcMain.handle('persona:snapshot', () => snapshot)
       ipcMain.handle('persona:conversation', (_event, id: string) => {
         if (failed) throw new Error('fixture: history unavailable')
-        return id === 'session-0' ? history : []
+        return { cursor: 'fixture', reset: true, turns: id === 'session-0' ? history : [] }
       })
       ipcMain.handle('persona:terminal-snapshot', (_event, id: string) => ({ sessionId: id, sequence: 1, columns: 100, rows: 30, data: '既存のCodex会話\r\n' }))
       ipcMain.handle('persona:terminal-resize', () => undefined)

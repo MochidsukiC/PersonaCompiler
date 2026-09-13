@@ -19,6 +19,12 @@ describe('sent message display', () => {
 })
 
 describe('received message display', () => {
+  it('shows each batched speaker and original turn without recursively interpreting nested batches', () => {
+    const message = JSON.stringify({ kind: 'heardSpeech', eventId: 1, turn: 3, speaker: { id: 'a', name: '葵', position: { x: 0, y: 0, z: 0 } }, volume: 'low', text: 'おはよう' })
+    const batch = { kind: 'heardSpeechBatch', turn: 4, messages: [{ deliveryId: 'a', message }, { deliveryId: 'b', message }] }
+    expect(receivedMessageDisplay(JSON.stringify(batch))).toEqual({ label: 'まとめて受信 · 2件', text: '葵 · 小声 · ターン 3\nおはよう\n\n葵 · 小声 · ターン 3\nおはよう' })
+    expect(receivedMessageDisplay(JSON.stringify({ ...batch, messages: [{ deliveryId: 'nested', message: JSON.stringify(batch) }] }))).toBeNull()
+  })
   it('renders the reported situation notification without nested JSON or memory source history', () => {
     const display = receivedMessageDisplay(situationMessage)!
     expect(display.label).toBe('状況通知 · 1日目・夕 · ターン 3')

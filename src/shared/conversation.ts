@@ -8,6 +8,18 @@ export const conversationTurnSchema = z.object({
 })
 export type ConversationTurn = z.infer<typeof conversationTurnSchema>
 export type ConversationItem = ConversationTurn['items'][number]
+export interface ConversationPage { cursor: string; reset: boolean; turns: ConversationTurn[]; order?: string[] }
+export function mergeConversation(previous: ConversationTurn[], page: ConversationPage): ConversationTurn[] {
+  if (page.reset) return page.turns
+  if (!page.order) return previous
+  const turns = new Map(previous.map(turn => [turn.id, turn]))
+  for (const turn of page.turns) turns.set(turn.id, turn)
+  return page.order.map(id => {
+    const turn = turns.get(id)
+    if (!turn) throw new Error(`会話の差分に必要なTurnがありません: ${id}`)
+    return turn
+  })
+}
 
 const volumes = { low: '小声', medium: '普通の声', high: '大声' }
 const sentMessageSchema = z.object({
@@ -24,6 +36,7 @@ const receivedMessageSchema = z.discriminatedUnion('kind', [
   z.object({ kind: z.literal('heardSpeech'), eventId: z.number().int(), turn: z.number().int(), speaker: z.object({ id: z.string(), name: z.string(), position: z.object({ x: z.number(), y: z.number(), z: z.number() }) }), volume: z.enum(['low', 'medium', 'high']), text: z.string() }),
   z.object({ kind: z.literal('facilityResponse'), facilityId: z.string(), text: z.string() })
 ])
+const receivedBatchSchema = z.object({ kind: z.literal('heardSpeechBatch'), turn: z.number().int(), messages: z.array(z.object({ deliveryId: z.string(), message: z.string() })).min(1).max(32) })
 
 const positionSchema = z.object({ x: z.number().int(), y: z.number().int(), z: z.number().int() })
 const activitySchema = z.enum(['entering', 'active', 'ended', 'sleeping'])
@@ -79,6 +92,18 @@ export function receivedMessageDisplay(text: string): { label: string; text: str
     throw error
   }
   if (situation) return situationDisplay(value)
+  const batch = receivedBatchSchema.safeParse(value)
+  if (batch.success) {
+    const messages = batch.data.messages.map(entry => {
+      let message: unknown
+      try { message = JSON.parse(entry.message) } catch (error) { if (error instanceof SyntaxError) return null; throw error }
+      const parsed = receivedMessageSchema.safeParse(message)
+      if (!parsed.success || parsed.data.kind !== 'heardSpeech') return null
+      return `${parsed.data.speaker.name} · ${volumes[parsed.data.volume]} · ターン ${parsed.data.turn}\n${parsed.data.text}`
+    })
+    if (messages.some(message => message === null)) return null
+    return { label: `まとめて受信 · ${messages.length}件`, text: messages.join('\n\n') }
+  }
   const parsed = receivedMessageSchema.safeParse(value)
   if (!parsed.success) return null
   const message = parsed.data

@@ -76,15 +76,16 @@ class Runtime implements AgentRuntime {
 }
 class Terminals implements TerminalBridge {
   ids = new Set<string>()
+  exited = new Set<string>()
   listener: (id: string) => void = () => undefined
   has(id: string) { return this.ids.has(id) }
-  isRunning(id: string) { return this.ids.has(id) }
+  isRunning(id: string) { return this.ids.has(id) && !this.exited.has(id) }
   onExit(listener: (id: string) => void) { this.listener = listener; return () => { this.listener = () => undefined } }
-  async attach(binding: SessionBinding) { this.ids.add(binding.sessionId) }
+  async attach(binding: SessionBinding) { this.ids.add(binding.sessionId); this.exited.delete(binding.sessionId) }
   async snapshot(id: string) { return { sessionId: id, sequence: 1, columns: 100, rows: 30, data: 'real bridge tested separately' } }
   async input() {}
   async resize() {}
-  async dispose() { this.ids.clear() }
+  async dispose() { this.ids.clear(); this.exited.clear() }
 }
 const engines = new Set<BackendEngine>()
 afterEach(async () => { for (const e of engines) await e.close(); engines.clear() })
@@ -127,6 +128,26 @@ async function review(engine: BackendEngine, runtime: Runtime, configuration = s
 }
 
 describe('Preparation harness', () => {
+  it('creates and restores conversations without spawning terminals until opened', async () => {
+    const { engine, runtime, root } = await setup()
+    const attach = vi.spyOn(engine.sessions, 'attach')
+    await review(engine, runtime)
+    await engine.backendCommand({ type: 'approve', revision: 1 })
+    await complete(engine, runtime, population)
+    expect(attach).not.toHaveBeenCalled()
+    expect(engine.snapshot().state.agents.every(agent => agent.status !== 'ended')).toBe(true)
+    await Promise.all([engine.terminalSnapshot('npc0'), engine.terminalSnapshot('npc0')])
+    expect(attach).toHaveBeenCalledTimes(1)
+    await engine.terminalSnapshot('npc0')
+    expect(attach).toHaveBeenCalledTimes(1)
+    await expect(engine.terminalSnapshot('missing')).rejects.toThrow('Conversation')
+    await engine.close(); engines.delete(engine)
+    const restored = await setup(root)
+    expect(restored.engine.sessions.has('npc0')).toBe(false)
+    expect(restored.runtime.created).toEqual([])
+    await restored.engine.terminalSnapshot('npc0')
+    expect(restored.engine.sessions.has('npc0')).toBe(true)
+  })
   it.each([false, true])('refreshes existing life NPC prompts without replacing their conversations (memory=%s)', async memory => {
     const { engine, runtime, root } = await setup(undefined, memory)
     await review(engine, runtime)
@@ -248,11 +269,12 @@ describe('Preparation harness', () => {
     const binding = engine.backendStatus().preparation.sessions[0]
     const operation = engine.backendStatus().preparation.operation
     const terminals = engine.sessions as Terminals
+    await engine.terminalSnapshot('parent')
     const resume = vi.spyOn(runtime, 'resume')
     const start = vi.spyOn(runtime, 'startTurn')
     const attach = vi.spyOn(terminals, 'attach')
     runtime.listener({ method: 'turn/started', params: { threadId: binding.threadId, turn: { id: operation!.turnId } } })
-    terminals.ids.delete('parent'); terminals.listener('parent')
+    terminals.exited.add('parent'); terminals.listener('parent')
     await vi.waitFor(() => expect(engine.snapshot().state.agents[0].status).toBe('ended'))
     await engine.backendCommand({ type: 'terminalReconnect', sessionId: 'parent' })
     expect(resume).toHaveBeenCalledWith(expect.objectContaining({ threadId: binding.threadId }))

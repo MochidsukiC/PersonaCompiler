@@ -1,7 +1,7 @@
 import { z } from 'zod'
 import type { BackendCommand, BackendSnapshot } from '../core/contracts'
 import { simulationSchema } from '../core/life-contracts'
-import type { ConversationTurn } from './conversation'
+import type { ConversationPage } from './conversation'
 import type { MemoryDetail, MemoryInspection } from '../core/memory-contracts'
 
 const point = z.object({ x: z.number().finite(), y: z.number().finite() })
@@ -85,7 +85,7 @@ export interface DesktopApi {
   openExternal(path: string): Promise<void>
   reveal(path: string): Promise<void>
   terminalSnapshot(sessionId: string): Promise<TerminalSnapshot>
-  conversation(sessionId: string): Promise<ConversationTurn[]>
+  conversation(sessionId: string, cursor?: string): Promise<ConversationPage>
   terminalInput(sessionId: string, data: string): Promise<void>
   terminalResize(sessionId: string, columns: number, rows: number): Promise<void>
   terminalInterrupt(sessionId: string): Promise<void>

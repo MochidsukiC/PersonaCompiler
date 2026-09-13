@@ -92,11 +92,11 @@ register('reveal', async relative => {
     if (error) throw new Error(`フォルダーを開けませんでした: ${error}`)
   } else shell.showItemInFolder(await currentEngine().workspace.resolve(value))
 })
-register('terminal-snapshot', id => currentEngine().sessions.snapshot(identifier.parse(id)))
-register('conversation', id => {
+register('terminal-snapshot', id => { const target = currentEngine(); const sessionId = identifier.parse(id); return target instanceof BackendEngine ? target.terminalSnapshot(sessionId) : target.sessions.snapshot(sessionId) })
+register('conversation', (id, cursor) => {
   const target = currentEngine()
   if (!(target instanceof BackendEngine)) throw new Error('メッセージ履歴は実Codex接続時に利用できます')
-  return target.conversation(identifier.parse(id))
+  return target.conversation(identifier.parse(id), z.string().max(100).optional().parse(cursor))
 })
 register('terminal-input', (id, data) => currentEngine().terminalInput(identifier.parse(id), z.string().max(65536).parse(data)))
 register('terminal-resize', (id, columns, rows) => currentEngine().sessions.resize(identifier.parse(id), z.number().int().min(2).max(500).parse(columns), z.number().int().min(1).max(200).parse(rows)))
