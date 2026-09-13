@@ -1,11 +1,29 @@
-import { useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import type { SimulationSnapshot } from '../../core/life-contracts'
+import type { EventHistoryPage } from '../../core/event-search'
 import { emptyEventFilter, eventLabels, filterEvents, type EventFilter } from './event-timeline'
 import './event-timeline.css'
 
-export function EventTimeline({ simulation, onAgent }: { simulation: SimulationSnapshot; onAgent(id: string): void }) {
+export function EventTimeline({ simulation, runId, historyAvailable, onAgent }: { simulation: SimulationSnapshot; runId: string; historyAvailable: boolean; onAgent(id: string): void }) {
   const [filter, setFilter] = useState<EventFilter>(emptyEventFilter)
-  const events = filterEvents(simulation, filter)
+  const [historyMode, setHistoryMode] = useState(false)
+  const [history, setHistory] = useState<EventHistoryPage | null>(null)
+  const [applied, setApplied] = useState<EventFilter>(emptyEventFilter)
+  const [busy, setBusy] = useState(false)
+  const [error, setError] = useState<string | null>(null)
+  const request = useRef(0)
+  useEffect(() => () => { request.current++ }, [])
+  const changed = JSON.stringify(filter) !== JSON.stringify(applied)
+  const searchHistory = async (offset = 0, revision: number | null = null) => {
+    const id = ++request.current
+    setHistoryMode(true); setBusy(true); setError(null); setHistory(null); setApplied(filter)
+    try {
+      const page = await window.persona.eventHistory({ runId, filter, offset, revision })
+      if (id === request.current) setHistory(page)
+    } catch (error) { if (id === request.current) setError(error instanceof Error ? error.message : String(error)) }
+    finally { if (id === request.current) setBusy(false) }
+  }
+  const events = historyMode ? history?.events ?? [] : filterEvents(simulation, filter)
   const names = new Map(simulation.actors.map(a => [a.id, a.name]))
   const facilities = new Map(simulation.facilities.map(f => [f.locationId, f.name]))
   const actor = (id: string) => <button className="event-person" disabled={!names.has(id)} onClick={() => onAgent(id)}>{names.get(id) ?? id}</button>
@@ -18,9 +36,13 @@ export function EventTimeline({ simulation, onAgent }: { simulation: SimulationS
       <label className="event-query">本文・名前・施設<input aria-label="出来事を検索" value={filter.query} placeholder="例: 約束、図書室" onChange={e => setFilter({ ...filter, query: e.target.value })} /></label>
       <button className="button compact" onClick={() => setFilter(emptyEventFilter)}>絞り込みを解除</button>
     </div>
-    <p role="status">{events.length} / {simulation.events.length}件 · 新しい順</p>
-    <p className="event-note">検索対象は画面に届いた直近の出来事です。過去の全履歴は含みません。受信対象は既読・記憶化を保証するものではありません。</p>
-    {events.length === 0 && <div className="event-empty">{simulation.events.length ? '条件に一致する出来事はありません。' : 'まだ出来事はありません。生活が進むとここに表示されます。'}</div>}
+    {historyAvailable && <div className="event-history-controls"><button className="button compact" disabled={busy} onClick={() => void searchHistory()}>保存済み履歴を検索</button>{historyMode && <button className="button compact" onClick={() => { request.current++; setHistoryMode(false); setBusy(false); setError(null) }}>直近の出来事に戻る</button>}</div>}
+    <p role="status">{historyMode ? busy ? '保存済み履歴を検索中…' : history ? `${history.total ? history.offset + 1 : 0}–${history.offset + events.length} / ${history.total}件 · 保存済み · 新しい順` : '保存済み履歴を表示できません。' : `${events.length} / ${simulation.events.length}件 · 新しい順`}</p>
+    {error && <p role="alert">{error}</p>}
+    <p className="event-note">{historyMode ? `確定保存された履歴を検索しています。未保存の出来事は含みません。${history ? `保存revision ${history.revision}。` : ''}最新の保存を調べる場合は再検索してください。` : '検索対象は画面に届いた直近の出来事です。過去の全履歴は含みません。'}受信対象は既読・記憶化を保証するものではありません。</p>
+    {historyMode && changed && <p className="event-note">条件が変更されています。「保存済み履歴を検索」で反映してください。</p>}
+    {historyMode && history && <div className="event-history-controls"><button className="button compact" disabled={busy || changed || history.offset === 0} onClick={() => void searchHistory(Math.max(0, history.offset - 100), history.revision)}>前の100件</button><button className="button compact" disabled={busy || changed || history.offset + events.length >= history.total} onClick={() => void searchHistory(history.offset + 100, history.revision)}>次の100件</button></div>}
+    {events.length === 0 && (!historyMode || history) && <div className="event-empty">{historyMode || simulation.events.length ? '条件に一致する出来事はありません。' : 'まだ出来事はありません。生活が進むとここに表示されます。'}</div>}
     <div className="event-list">{events.map(event => <article key={event.sequence} className={`event-record event-${event.kind}`}>
       <div className="event-meta"><strong>{eventLabels[event.kind]}</strong><span>Turn {event.turn}</span><small>#{event.sequence}</small></div>
       <div className="event-place">{actor(event.actorId)}<span>{facilities.get(event.locationId) ?? event.locationId}{event.position && ` (${event.position.x}, ${event.position.y}, ${event.position.z})`}</span></div>

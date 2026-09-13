@@ -4,6 +4,8 @@ import { MEMORY_MATCHER_PROMPT } from './memory-matcher'
 import { MEMORY_CONSOLIDATION_PROMPT } from '../core/memory-contracts'
 import { ParentProduction } from './production'
 import { ConversationCache } from './conversation-cache'
+import { readEventHistory } from './event-history'
+import type { EventHistoryQuery } from '../core/event-search'
 import { compilationSchema, productionOperationSchema, characterPackageSchema, type ProductionOperation } from '../core/compiler-contracts'
 import { StandardCompilerPrompts, compilerInputSchema, validateCharacterPackage, type CompilerInput, type CompilerPromptProvider } from '../core/compiler'
 import { buildCharacterReview, characterReviewMarkdown } from '../core/character-review'
@@ -1051,6 +1053,10 @@ NPCのモデルAutoとeffort Autoは独立しています。effortはsettings.np
   }
   memoryInspection(id: string) { if (!this.life) throw new Error('生活ワールドがありません'); return this.life.memoryInspection(id) }
   memoryDetail(id: string, memoryId: string, revision: number) { if (!this.life) throw new Error('生活ワールドがありません'); return this.life.memoryDetail(id, memoryId, revision) }
+  eventHistory(query: EventHistoryQuery) {
+    if (!this.life || !this.persistence) throw new Error('保存済みの生活履歴がありません')
+    return readEventHistory(this.workspace, this.life.snapshot(), query)
+  }
   newRun(): Promise<void> {
     if (this.persistence) return this.newMemoryRun()
     this.stopRequested = true

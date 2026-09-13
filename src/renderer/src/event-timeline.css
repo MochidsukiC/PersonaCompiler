@@ -19,4 +19,5 @@
 .event-person:disabled { border: 0; cursor: default; }
 .event-recipients { border-top: 1px solid #354c30; padding-top: 9px; font-size: 11px; }
 .event-empty { padding: 30px 10px; text-align: center; border: 1px dashed #49623f; color: #adc09f; }
+.event-history-controls { display: flex; flex-wrap: wrap; gap: 8px; margin: 12px 0; }
 @media (max-width: 1250px) { .event-filters { grid-template-columns: 1fr 1fr; } .event-query { grid-column: span 1; } }
