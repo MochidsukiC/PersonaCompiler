@@ -1,4 +1,5 @@
 import { z } from 'zod'
+import { devCommandSchema } from './dev-contracts'
 import type { Compilation } from './compiler-contracts'
 import { mapSchema } from '../shared/contracts'
 import { dimensionsSchema, type SimulationSnapshot } from './life-contracts'
@@ -103,6 +104,7 @@ export const preparationProgressSchema = z.object({
 })
 export type PreparationProgress = z.infer<typeof preparationProgressSchema>
 export interface BackendSnapshot {
+  dev?: { busy: boolean; revision: number; checkpoints: number; operation: import('./dev-contracts').DevState['operation'] }
   compilation?: Compilation
   persistence?: import('./persistence').PersistenceStatus
   connection: 'disconnected' | 'connecting' | 'connected' | 'error'
@@ -116,6 +118,7 @@ export interface BackendSnapshot {
   simulation?: SimulationSnapshot
 }
 export const backendCommandSchema = z.discriminatedUnion('type', [
+  ...devCommandSchema.options,
   z.object({ type: z.literal('connect'), authMode: z.enum(['chatgpt', 'apiKey']) }),
   z.object({ type: z.literal('loginChatGpt') }),
   z.object({ type: z.literal('loginApiKey'), apiKey: z.string().min(1).max(1000) }),

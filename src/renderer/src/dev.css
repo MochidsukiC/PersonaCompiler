@@ -1,0 +1,8 @@
+.dev-panel { padding: 18px; border-bottom: 1px solid #537361; background: #1b2a25; overflow: auto; max-height: 65vh; flex-shrink: 0; }
+.dev-heading, .dev-actions { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; margin-bottom: 12px; }
+.dev-heading { justify-content: space-between; color: #bee4b5; }
+.dev-panel p { font-size: 12px; line-height: 1.6; overflow-wrap: anywhere; }
+.dev-panel label { display: flex; flex-direction: column; gap: 6px; font-size: 12px; margin: 12px 0; }
+.dev-panel select { padding: 8px; background: #15211d; color: #dae5df; border: 1px solid #557063; max-width: 100%; }
+.dev-panel textarea { width: 100%; min-height: 230px; resize: vertical; box-sizing: border-box; padding: 12px; line-height: 1.6; font-size: 12px; background: #111c17; color: #e0eae4; border: 1px solid #557063; margin-bottom: 12px; }
+.dev-actions span { font-size: 12px; color: #bdcabf; }

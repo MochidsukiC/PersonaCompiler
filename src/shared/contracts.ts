@@ -70,6 +70,7 @@ export type ImageInput = PreparationInput['images'][number]
 export type AppEvent = { type: 'workspace'; snapshot: WorkspaceSnapshot } | { type: 'terminal'; chunk: TerminalChunk } | { type: 'error'; message: string }
 
 export interface DesktopApi {
+  devPanel(): Promise<import('../core/dev-contracts').DevPanelState>
   memoryInspection(agentId: string): Promise<MemoryInspection>
   memoryDetail(agentId: string, memoryId: string, revision: number): Promise<MemoryDetail>
   backendStatus(): Promise<BackendSnapshot>

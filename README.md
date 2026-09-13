@@ -40,7 +40,11 @@ Windowsのnode-pty 1.1.0にはNode-APIの公式バイナリーが同梱されて
 
 ## 親システムプロンプト
 
-親の全体方針には、提供された `src/core/prompts/parent-system.md` のtextコードブロックを使用します。原文を保持し、`src/core/prompts.ts`で現行の準備フェーズ用規則とJSON Schemaを末尾に付けます。最初の質問ラウンド、Harnessによる承認・Session作成、turn=0での停止は維持します。生活進行は親から分離したCoreが担当し、新規ワールドではHarnessが出生時の初期条件生成と終了後のCharacter Compilationを親へ依頼します。新しい親Conversationの作成時、およびアプリ再起動後に保存済みのConversationへ接続するときに適用します。接続中のCLIだけを再接続してもbaseInstructionsは更新されないため、プロンプト変更後はアプリを再起動してください。既存のConversation ID・会話履歴・承認済み仕様は引き継ぎます。
+親の全体方針には、提供された `src/core/prompts/parent-system.md` のtextコードブロックを使用します。原文を保持し、`src/core/prompts.ts`で現行の準備フェーズ用規則とJSON Schemaを末尾に付けます。最初の質問ラウンド、Harnessによる承認・Session作成、turn=0での停止は維持します。生活進行は親から分離したCoreが担当し、新規ワールドではHarnessが出生時の初期条件生成と終了後のCharacter Compilationを親へ依頼します。新しい親Conversationの作成時、およびアプリ再起動後に保存済みのConversationへ接続するときに適用します。接続中のCLIだけを再接続してもbaseInstructionsは更新されないため、ソースファイルのプロンプト変更後はアプリを再起動してください。DEV画面での編集は停止中にその場で適用できます。既存のConversation ID・会話履歴・承認済み仕様は引き継ぎます。
+
+## DEVモード
+
+上部の「DEV」から有効にすると、画面内でプロンプトを編集・適用し、保存した生成段階・時間ターンへ巻き戻せます。元の世界とConversationを残した実験分岐を作り、既定では適用済みの最新版プロンプトを維持します。保存時点の版も選べます。生成前から研究する場合は、最初の資料を送る前に有効にしてください。操作・復元範囲・保存規則は [DEV.md](DEV.md) を参照してください。
 
 ## 主観的な記憶
 

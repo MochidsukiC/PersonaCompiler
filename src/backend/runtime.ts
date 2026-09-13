@@ -21,6 +21,7 @@ const completedTurnSchema = z.object({ threadId: z.string(), turn: z.object({ id
 
 export interface RuntimeAccount { authenticated: boolean; mode: 'chatgpt' | 'apiKey' | null }
 export interface AgentRuntime {
+  fork?(binding: SessionBinding, lastTurnId: string | null, instructions?: string): Promise<string>
   setThreadPolicy?(binding: SessionBinding, readOnly: boolean): void
   matchMemories?(input: MemoryMatchInput, signal: AbortSignal, progress: (value: MemoryMatchProgress) => Promise<void>): Promise<string[]>
   setToolHandler(handler: (call: RuntimeToolCall) => Promise<RuntimeToolResult>): void
@@ -181,6 +182,16 @@ export class CodexRuntime implements AgentRuntime {
   async seed(binding: SessionBinding, text: string): Promise<void> {
     await this.configure(binding)
     await this.client().request('thread/inject_items', { threadId: binding.threadId, items: [{ type: 'message', role: 'user', content: [{ type: 'input_text', text }] }] })
+  }
+  async fork(binding: SessionBinding, lastTurnId: string | null, instructions?: string): Promise<string> {
+    const cwd = await realpath(binding.cwd)
+    const result = z.object({ thread: z.object({ id: z.string() }), model: z.string() }).parse(await this.client().request('thread/fork', {
+      threadId: binding.threadId, ...(lastTurnId ? { lastTurnId } : {}), model: binding.modelId, cwd,
+      ...this.approvals(binding), sandbox: 'workspace-write', config: this.configuration({ ...binding, cwd }),
+      ...(instructions === undefined ? {} : { baseInstructions: instructions })
+    }))
+    if (result.thread.id === binding.threadId || result.model !== binding.modelId) throw new Error(`Conversation分岐結果が不正です: ${binding.agentId}/${result.thread.id}`)
+    return result.thread.id
   }
   async resume(binding: SessionBinding, instructions?: string): Promise<void> {
     binding = { ...binding, cwd: await realpath(binding.cwd) }

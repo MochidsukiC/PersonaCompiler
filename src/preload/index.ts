@@ -2,6 +2,7 @@ import { contextBridge, ipcRenderer } from 'electron'
 import type { AppEvent, DesktopApi } from '../shared/contracts'
 
 const api: DesktopApi = {
+  devPanel: () => ipcRenderer.invoke('persona:dev-panel'),
   memoryInspection: id => ipcRenderer.invoke('persona:memory-inspection', id),
   memoryDetail: (id, memoryId, revision) => ipcRenderer.invoke('persona:memory-detail', id, memoryId, revision),
   backendStatus: () => ipcRenderer.invoke('persona:backend-status'),

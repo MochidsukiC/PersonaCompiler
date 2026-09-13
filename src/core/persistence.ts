@@ -3,6 +3,7 @@ import type { AgentModelSettings, PreparationProgress } from './contracts'
 import type { MemoryArchive } from './memory-contracts'
 
 export interface SavedBackend {
+  dev?: import('./dev-contracts').DevState
   version: 1
   lifeVersion?: 1
   memoryVersion?: 1

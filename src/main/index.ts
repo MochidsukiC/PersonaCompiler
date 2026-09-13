@@ -36,6 +36,11 @@ function register(channel: string, operation: (...args: unknown[]) => unknown): 
 }
 
 const identifier = z.string().min(1).max(160)
+register('dev-panel', () => {
+  const target = currentEngine()
+  if (!(target instanceof BackendEngine)) throw new Error('DEVモードにはBackendが必要です')
+  return target.devPanel()
+})
 register('memory-inspection', id => {
   const target = currentEngine()
   if (!(target instanceof BackendEngine)) throw new Error('このワールドは記憶機能の対象外です')

@@ -10,6 +10,7 @@ import type { AgentModelSettings, PreparationProgress, SessionBinding } from '..
 import { digest } from '../../src/main/workspace'
 import { models, settings, round, answers, draft, population } from './fixtures'
 import { FixturePersistencePort } from './persistence-fixture'
+import { DevStore } from '../../src/backend/dev-store'
 
 class Runtime implements AgentRuntime {
   toolHandler: (call: RuntimeToolCall) => Promise<RuntimeToolResult> = async () => { throw new Error('No tool handler') }
@@ -32,6 +33,18 @@ class Runtime implements AgentRuntime {
   async loginApiKey() {}
   async cancelLogin() {}
   async create(binding: SessionBinding, instructions: string) { this.created.push(binding.agentId); this.instructions.push(instructions); if (this.failCreation) throw new Error('thread/start response lost'); return `thread-${binding.agentId}` }
+  failFork = false
+  forks: { source: string; lastTurnId: string | null; id: string }[] = []
+  async fork(binding: SessionBinding, lastTurnId: string | null) {
+    if (this.failFork) throw new Error('thread/fork response lost')
+    const id = `fork-${crypto.randomUUID()}`, source = binding.threadId!
+    const turns = this.historyTurns.get(source) ?? []
+    const index = lastTurnId === null ? turns.length - 1 : turns.findIndex(t => t.id === lastTurnId)
+    if (lastTurnId && index < 0) throw new Error('unknown rewind turn')
+    this.historyTurns.set(id, structuredClone(turns.slice(0, index + 1)))
+    this.forks.push({ source, lastTurnId, id })
+    return id
+  }
   async seed(_binding: SessionBinding, text: string) { this.inputs.push(text) }
   async resume(binding: SessionBinding, instructions?: string) {
     this.resumed.push({ agentId: binding.agentId, threadId: binding.threadId, instructions })
@@ -99,11 +112,14 @@ async function setup(base?: string, memory = false, connect = true) {
   return { engine, runtime, root }
 }
 async function complete(engine: BackendEngine, runtime: Runtime, artifact: unknown) {
+  const devBefore = engine.backendStatus().dev?.checkpoints
   await engine.workspace.write('preparation/work/result.json', JSON.stringify(artifact))
   const op = engine.backendStatus().preparation.operation!
   const revision = engine.backendStatus().preparation.revision
   const kind = (artifact as { kind?: string }).kind
-  runtime.listener({ method: 'turn/completed', params: { threadId: 'thread-parent', turn: { id: op.turnId, status: 'completed' } } })
+  const threadId = engine.backendStatus().preparation.sessions.find(s => s.role === 'parent')!.threadId!
+  runtime.historyTurns.set(threadId, [...(runtime.historyTurns.get(threadId) ?? []), { id: op.turnId!, status: 'completed', clientIds: [], compact: false }])
+  runtime.listener({ method: 'turn/completed', params: { threadId, turn: { id: op.turnId, status: 'completed' } } })
   await vi.waitFor(() => {
     const p = engine.backendStatus().preparation
     expect(p.busy).toBe(false)
@@ -118,6 +134,7 @@ async function complete(engine: BackendEngine, runtime: Runtime, artifact: unkno
       expect(engine.snapshot().state.stage).toBe('ready')
     }
   }, { timeout: 10000 })
+  if (devBefore !== undefined) await vi.waitFor(() => { expect(engine.backendStatus().dev?.checkpoints).toBeGreaterThan(devBefore); expect(engine.backendStatus().dev?.busy).toBe(false); expect(engine.backendStatus().dev?.operation).toBeNull() }, { timeout: 10000 })
 }
 async function review(engine: BackendEngine, runtime: Runtime, configuration = settings, specification = draft) {
   await engine.backendCommand({ type: 'settings', settings: configuration })
@@ -376,4 +393,168 @@ describe('Preparation harness', () => {
     await engine.close(); engines.delete(engine)
     await expect(setup(root)).rejects.toThrow('自動再送しません')
   })
+})
+
+
+describe('DEV experiments', () => {
+  const ready = async (engine: BackendEngine) => {
+    await vi.waitFor(() => { expect(engine.backendStatus().dev?.operation).toBeNull(); expect(engine.backendStatus().dev?.busy).toBe(false) }, { timeout: 10000 })
+    if (engine.backendStatus().error) throw new Error(engine.backendStatus().error!)
+  }
+  it('rewinds all conversations, files and world turns into branches and keeps latest or historical prompts', async () => {
+    const { engine, runtime, root } = await setup(undefined, true)
+    await engine.backendCommand({ type: 'devEnable' })
+    const originalId = engine.snapshot().state.runId
+    await review(engine, runtime)
+    await ready(engine)
+    const preCity = (await engine.devPanel()).checkpoints.find(c => c.label === '都市・仕様生成前')!
+    expect(preCity).toBeDefined()
+    await engine.backendCommand({ type: 'approve', revision: 1 })
+    expect(() => engine.backendCommand({ type: 'devPrompts', prompts: { npc: 'in flight' } })).toThrow('処理中')
+    await complete(engine, runtime, population); await ready(engine)
+    await engine.backendCommand({ type: 'startSimulation', step: true })
+    await vi.waitFor(() => expect(engine.backendStatus().simulation?.stage).toBe('paused'))
+    await ready(engine)
+    const point = (await engine.devPanel()).checkpoints.find(c => c.label === 'Turn 1 終了')!
+    expect(point).toBeDefined()
+    const oldThreads = engine.backendStatus().preparation.sessions.map(s => s.threadId)
+    const oldHistory = structuredClone(runtime.historyTurns)
+    await engine.backendCommand({ type: 'devPrompts', prompts: { npc: 'LATEST {{townName}} {{birthModelId}}', parent: 'PARENT_LATEST' } })
+    await engine.workspace.write('future-only.txt', 'after checkpoint')
+    await engine.backendCommand({ type: 'startSimulation', step: true })
+    await vi.waitFor(() => expect(engine.backendStatus().simulation?.turn).toBe(2))
+    await vi.waitFor(() => expect(engine.backendStatus().simulation?.stage).toBe('paused'))
+    await ready(engine)
+    await expect(engine.backendCommand({ type: 'answers', value: answers })).rejects.toThrow('回答待ち')
+    expect(engine.backendStatus().error).not.toBeNull()
+    await engine.backendCommand({ type: 'devBranch', checkpointId: point.id, prompts: 'latest' })
+    expect(engine.snapshot().state.runId).not.toBe(originalId)
+    expect(engine.backendStatus().error).toBeNull()
+    expect(engine.backendStatus().simulation).toMatchObject({ turn: 1, stage: 'paused', phase: 'between' })
+    expect(engine.backendStatus().preparation.sessions.every(s => !oldThreads.includes(s.threadId))).toBe(true)
+    expect((await engine.devPanel()).state?.prompts.parent).toBe('PARENT_LATEST')
+    expect(runtime.resumed.filter(s => s.agentId === 'npc0').at(-1)?.instructions).toContain('LATEST 試験の町')
+    await expect(engine.workspace.read('future-only.txt')).rejects.toThrow()
+    expect(await readFile(path.join(root, originalId, 'future-only.txt'), 'utf8')).toBe('after checkpoint')
+    for (const binding of engine.backendStatus().preparation.sessions) {
+      const source = oldThreads.find(id => id === `thread-${binding.agentId}`)!
+      expect(await runtime.history(binding.threadId!)).toEqual(oldHistory.get(source) ?? [])
+    }
+    const inherited = (await engine.devPanel()).checkpoints.find(c => c.id === preCity.id)!
+    await engine.backendCommand({ type: 'devBranch', checkpointId: inherited.id, runId: inherited.runId, prompts: 'checkpoint' })
+    expect(engine.backendStatus().preparation.draft).toBeNull()
+    expect(engine.backendStatus().preparation.population).toBeNull()
+    expect(engine.backendStatus().simulation).toBeUndefined()
+    expect((await engine.devPanel()).state?.prompts.parent).not.toBe('PARENT_LATEST')
+    expect((await engine.devPanel()).state?.prompts.npc).toContain('{{townName}}')
+    const parent = engine.backendStatus().preparation.sessions[0]
+    expect(await runtime.history(parent.threadId!)).toEqual([])
+    await engine.resume()
+    expect(runtime.inputs.at(-1)).toContain('5人の町を作る。学校と職場がある。')
+    await complete(engine, runtime, { kind: 'questions', round })
+  })
+  it('records every turn during continuous DEV execution and refuses an in-flight prompt edit', async () => {
+    const { engine, runtime } = await setup(undefined, true)
+    await engine.backendCommand({ type: 'devEnable' })
+    await review(engine, runtime); await ready(engine)
+    await engine.backendCommand({ type: 'approve', revision: 1 })
+    await complete(engine, runtime, population); await ready(engine)
+    await engine.backendCommand({ type: 'startSimulation', step: false })
+    await vi.waitFor(() => expect(engine.backendStatus().simulation?.turn).toBeGreaterThanOrEqual(3), { timeout: 10000 })
+    await engine.pause()
+    const labels = (await engine.devPanel()).checkpoints.map(c => c.label)
+    expect(labels).toContain('Turn 1 終了')
+    expect(labels).toContain('Turn 2 終了')
+  })
+  it('does not activate or resend a branch whose fork result is unknown', async () => {
+    const { engine, runtime } = await setup(undefined, true)
+    await engine.backendCommand({ type: 'devEnable' })
+    await engine.backendCommand({ type: 'settings', settings })
+    await engine.prepare({ description: 'fixture', images: [] })
+    await complete(engine, runtime, { kind: 'questions', round }); await ready(engine)
+    const point = (await engine.devPanel()).checkpoints.at(-1)!
+    const originalId = engine.snapshot().state.runId, calls = runtime.inputs.length
+    runtime.failFork = true
+    await expect(engine.backendCommand({ type: 'devBranch', checkpointId: point.id, prompts: 'latest' })).rejects.toThrow('thread/fork response lost')
+    expect(engine.snapshot().state.runId).toBe(originalId)
+    expect(runtime.inputs).toHaveLength(calls)
+    await expect(engine.backendCommand({ type: 'devBranch', checkpointId: point.id, runId: crypto.randomUUID(), prompts: 'latest' })).rejects.toThrow('系譜')
+  })
+})
+
+
+it('restores a known DEV point from a dirty run without replaying unknown inference', async () => {
+  const { engine, runtime, root } = await setup(undefined, true)
+  await engine.backendCommand({ type: 'devEnable' })
+  await engine.backendCommand({ type: 'settings', settings })
+  await engine.prepare({ description: 'fixture', images: [] })
+  await complete(engine, runtime, { kind: 'questions', round })
+  const point = (await engine.devPanel()).checkpoints.at(-1)!
+  const histories = structuredClone(runtime.historyTurns)
+  await engine.saveNow(); await engine.discardClose(); engines.delete(engine)
+  const restored = await setup(root, true, false)
+  restored.runtime.historyTurns = histories
+  expect(restored.engine.backendStatus().persistence?.state).toBe('readOnly')
+  await restored.engine.backendCommand({ type: 'devBranch', checkpointId: point.id, prompts: 'checkpoint' })
+  expect(restored.engine.backendStatus().persistence?.readOnlyReason).toBeNull()
+  expect(restored.engine.backendStatus().preparation.round).toEqual(round)
+  expect(restored.runtime.inputs).toEqual([])
+})
+
+it('retains a failed DEV prompt operation and does not resume it after a dirty restart', async () => {
+  const { engine, runtime, root } = await setup(undefined, true)
+  await engine.backendCommand({ type: 'devEnable' })
+  await engine.backendCommand({ type: 'settings', settings })
+  vi.spyOn(runtime, 'resume').mockRejectedValueOnce(new Error('resume response lost'))
+  await expect(engine.backendCommand({ type: 'devPrompts', prompts: { parent: 'NEW_PROMPT' } })).rejects.toThrow('response lost')
+  expect(engine.backendStatus().dev?.operation).toMatchObject({ kind: 'prompts', status: 'uncertain' })
+  expect(() => engine.backendCommand({ type: 'startSimulation', step: true })).toThrow('未確定')
+  await engine.discardClose(); engines.delete(engine)
+  const restored = await setup(root, true, false)
+  expect(restored.engine.backendStatus().persistence?.state).toBe('readOnly')
+  expect(restored.runtime.resumed).toEqual([])
+  expect(restored.runtime.inputs).toEqual([])
+})
+
+
+it('stops before inference when a DEV checkpoint cannot be saved', async () => {
+  const { engine, runtime } = await setup(undefined, true)
+  await engine.backendCommand({ type: 'devEnable' })
+  await engine.backendCommand({ type: 'settings', settings })
+  const before = runtime.inputs.length
+  const capture = vi.spyOn(DevStore.prototype, 'capture').mockRejectedValueOnce(new Error('ENOSPC DEV checkpoint'))
+  await expect(engine.prepare({ description: 'must not dispatch', images: [] })).rejects.toThrow('ENOSPC')
+  capture.mockRestore()
+  expect(runtime.inputs).toHaveLength(before)
+  expect(engine.backendStatus().dev?.operation).toMatchObject({ status: 'uncertain' })
+  expect((await engine.devPanel()).checkpoints).toHaveLength(1)
+  await engine.discardClose(); engines.delete(engine)
+})
+
+
+it('checkpoints the final DEV world before automatic Compilation and does not compile merely by branching', async () => {
+  const { engine, runtime, root } = await setup(undefined, true)
+  await engine.backendCommand({ type: 'devEnable' })
+  const specification = structuredClone(draft); specification.specification.simulation.maxTurns = 1
+  await review(engine, runtime, settings, specification)
+  await engine.backendCommand({ type: 'approve', revision: 1 })
+  await complete(engine, runtime, population)
+  await engine.backendCommand({ type: 'startSimulation', step: false })
+  await vi.waitFor(() => expect(engine.backendStatus().compilation?.status).toBe('completed'), { timeout: 10000 })
+  const point = (await engine.devPanel()).checkpoints.find(c => c.label === 'Turn 1 終了')!
+  expect(point).toBeDefined()
+  const inputs = runtime.inputs.length
+  await engine.backendCommand({ type: 'devBranch', checkpointId: point.id, prompts: 'latest' })
+  expect(engine.backendStatus().simulation?.stage).toBe('ended')
+  expect(engine.backendStatus().compilation).toBeUndefined()
+  expect(runtime.inputs).toHaveLength(inputs)
+  const history = structuredClone(runtime.historyTurns)
+  await engine.close(); engines.delete(engine)
+  const restored = await setup(root, true, false)
+  restored.runtime.historyTurns = history
+  await restored.engine.backendCommand({ type: 'connect', authMode: 'chatgpt' })
+  expect(restored.runtime.inputs).toEqual([])
+  expect((await restored.engine.devPanel()).state?.hold).toBe(true)
+  await restored.engine.backendCommand({ type: 'recompile' })
+  await vi.waitFor(() => expect(restored.engine.backendStatus().compilation?.status).toBe('completed'), { timeout: 10000 })
 })

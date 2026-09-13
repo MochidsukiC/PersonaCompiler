@@ -33,6 +33,7 @@ type ToolResult = z.infer<typeof resultSchema>
 export interface LifeHistoryTurn { id: string; status: string; clientIds: string[]; compact: boolean }
 export class TurnAlreadyEndedError extends Error {}
 export interface LifeServices {
+  consolidationPrompt?(): string
   lifecycle?: { seed: string; birth(request: Birth, parents: Resident[], turn: number): Promise<NpcInitialization> }
   start(agentId: string, text: string, clientId: string): Promise<string>
   steer(agentId: string, turnId: string, text: string, clientId: string): Promise<void>
@@ -488,7 +489,7 @@ export class LifeHarness {
           if (this.cognition && this.cognition.owner(a.id).consolidation !== 'complete') {
             if (this.cognition.owner(a.id).consolidation !== 'pending') throw new LifeRuleError(`記憶整理の完了が不明です: ${a.id}`)
             this.memoryChanges.push(this.cognition.prepare(a.id, owner => { owner.consolidation = 'running' }))
-            this.enqueue(d, a.id, 'consolidation', MEMORY_CONSOLIDATION_PROMPT)
+            this.enqueue(d, a.id, 'consolidation', this.services.consolidationPrompt?.() ?? MEMORY_CONSOLIDATION_PROMPT)
           } else { a.compact = 'running'; this.enqueue(d, a.id, 'compact', '') }
         }
       }

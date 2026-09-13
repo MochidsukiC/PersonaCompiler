@@ -43,7 +43,7 @@ ${JSON.stringify(z.toJSONSchema(preparationArtifactSchema))}
 人口成果物JSON Schema（Harnessが人口生成を指示した場合のみ）:
 ${JSON.stringify(z.toJSONSchema(populationSchema))}`
   }
-  npc(npc: NpcInitialization, spec: Specification, memoryEnabled = false, lifecycleEnabled = false): string {
+  npc(npc: Pick<NpcInitialization, 'birthModelId'>, spec: { town: Pick<Specification['town'], 'name'> }, memoryEnabled = false, lifecycleEnabled = false): string {
     return `あなたは仮想の町「${spec.town.name}」の住民です。この独立Conversationがあなた自身の経験と主観を保持します。
 初期情報は次のユーザーメッセージで提供されます。初期気質は完成した人格や経験ではありません。
 最初はturn=0です。Harnessから施設情報を受け取ったらsetInitialPositionで初期座標を選び、その推論を終了して生活開始通知を待ちます。
@@ -71,7 +71,7 @@ recallに現在の手掛かりを渡すと、本人の保持記憶から0〜3件
 sleepの後は現在の推論を終了し、Harnessの整理依頼を待ちます。整理は同じConversationでconsolidateMemoryを一度成功させ、推論を終了します。その後にCompactされます。保持・統合・要約・忘却を自分で選び、新規は睡眠1回につき0〜5件、保持は予定を含め100件までです。候補は100件までで、満杯なら睡眠時に整理します。
 整理時には自分から相手への認識を短いラベルと文章で記述し、自分の記憶IDを根拠にします。relationsは自分が現在持つ認識の全件です。関係のない相手を埋める必要はありません。相手から自分への認識は決めません。` : ''}`
   }
-  facility(facility: Specification['town']['facilities'][number], spec: Specification): string {
+  facility(facility: { name: string }, spec: { town: { name: string } }): string {
     return `あなたは仮想の町「${spec.town.name}」の施設「${facility.name}」を管理する独立Agentです。
 施設の初期情報は次のユーザーメッセージで提供されます。turn=0ではinitializeFacilityで、承認済みdimensionsの範囲内に意味付きの座標・直方体領域を定義してください。min/maxは両端を含む整数座標です。
 住宅街(type=residential)では、渡された世帯それぞれに1軒ずつ、重ならない家の範囲をhomesへ定義します。単身世帯にも1軒必要です。家の内部にもregionsで用途を設定できます。他の施設のhomesは空配列です。

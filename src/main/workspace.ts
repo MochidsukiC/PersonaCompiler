@@ -23,7 +23,7 @@ export class Workspace {
   async initialize(): Promise<void> {
     await mkdir(this.root, { recursive: true })
     if (!this.memory) await this.write('state.json', JSON.stringify(this.view.state, null, 2))
-    this.watcher = watch(this.root, { ignoreInitial: true, followSymlinks: false, ignored: p => p.endsWith('.tmp'), atomic: true, awaitWriteFinish: { stabilityThreshold: 120, pollInterval: 30 } })
+    this.watcher = watch(this.root, { ignoreInitial: true, followSymlinks: false, ignored: p => p.endsWith('.tmp') || (this.memory && path.relative(this.root, p).split(path.sep)[0] === 'dev'), atomic: true, awaitWriteFinish: { stabilityThreshold: 120, pollInterval: 30 } })
     this.watcher.on('all', (event, target) => {
       if (this.memory) {
         this.refreshQueue = this.refreshQueue.then(() => this.fileChanged(event, target)).catch(error => this.report(messageOf(error)))
@@ -126,7 +126,7 @@ export class Workspace {
     const entries = await readdir(directory, { withFileTypes: true })
     const result: FileEntry[] = []
     for (const entry of entries.sort((a, b) => Number(b.isDirectory()) - Number(a.isDirectory()) || a.name.localeCompare(b.name))) {
-      if (entry.name.endsWith('.tmp') || entry.isSymbolicLink()) continue
+      if (entry.name.endsWith('.tmp') || entry.isSymbolicLink() || (this.memory && !relative && entry.name === 'dev')) continue
       const filePath = relative ? `${relative}/${entry.name}` : entry.name
       result.push(entry.isDirectory()
         ? { name: entry.name, path: filePath, kind: 'directory', children: await this.tree(filePath) }
