@@ -2,6 +2,8 @@
 
 Windows・Electron・TypeScriptで、Codexの親Conversationと独立したNPC／施設Conversationを作るアプリです。新規ワールドでは住宅街と世帯ごとの家を生成し、NPCが3次元の施設内で移動・会話・施設利用・睡眠を選択します。初期化後は `ready` / `turn=0` で停止し、ユーザーの開始操作から生活を進めます。
 
+2026-09-14の改善内容、各機能の試し方・検証結果・revert手順は[磨き上げレビュー](improvements/README.md)にまとめています。
+
 ## 起動
 
 Node.js 24以降、Codex CLIを使用します。準備フロー・生活Tool・実端末の結合検証はCLI **0.154.0-alpha.6.2**、Electronは44.3.0で確認しています。
