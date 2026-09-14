@@ -231,7 +231,7 @@ it.each((['birth', 'compile'] as const).flatMap(kind => (['before', 'during'] as
   const producer = new ParentProduction(runtime, engine.workspace, () => binding, async () => undefined, async operation => {
     operations.push(structuredClone(operation))
     if (phase === 'before' && operation.status === 'requested') await engine.workspace.write(`${path.posix.dirname(operation.output)}/input.json`, JSON.stringify({ marker: 'changed-before-send' }))
-  })
+  }, () => undefined)
   runtime.startTurn = async (parent, text) => {
     sends++
     const relative = text.match(/入力資料: (production\/[a-f0-9-]+\/input.json)/)![1]
@@ -260,10 +260,69 @@ it('records a lost parent response without automatically sending it again', asyn
     let sends = 0
     runtime.startTurn = async () => { sends++; throw new Error('response lost') }
     const operations: ProductionOperation[] = []
-    const producer = new ParentProduction(runtime, workspace, () => binding, async () => undefined, async op => { operations.push(structuredClone(op)) })
+    const producer = new ParentProduction(runtime, workspace, () => binding, async () => undefined, async op => { operations.push(structuredClone(op)) }, () => undefined)
     await expect(producer.generate('birth', 'birth-1', 'test', {})).rejects.toThrow('response lost')
     expect(sends).toBe(1)
     expect(operations.at(-1)).toMatchObject({ status: 'uncertain', turnId: null })
+  } finally { await engine.close() }
+})
+it('does not start parent compilation after pause while its production input is still being saved', async () => {
+  const { runtime, engine } = await setup()
+  let release!: () => void, reached!: () => void
+  const held = new Promise<void>(resolve => { release = resolve })
+  const preparing = new Promise<void>(resolve => { reached = resolve })
+  const write = engine.workspace.write.bind(engine.workspace)
+  let intercepted = false
+  engine.workspace.write = async (relative, content) => {
+    await write(relative, content)
+    if (!intercepted && /^preparation\/work\/production\/[^/]+\/input\.json$/.test(relative)) {
+      intercepted = true; reached(); await held
+    }
+  }
+  try {
+    await engine.backendCommand({ type: 'connect', authMode: 'chatgpt' })
+    await preparing
+    await engine.pause()
+    release()
+    const until = Date.now() + 5000
+    while (engine.backendStatus().compilation?.status !== 'pending') {
+      if (Date.now() > until) throw new Error(JSON.stringify(engine.backendStatus().compilation))
+      await new Promise(resolve => setTimeout(resolve, 10))
+    }
+    expect(runtime.generated).toEqual([])
+    expect(engine.backendStatus().compilation!.tasks[0]).toMatchObject({ status: 'failed', error: '停止中のため制作処理を開始できません' })
+    await engine.close()
+  } finally { release(); if (engine.backendStatus().connection !== 'disconnected') await engine.close() }
+})
+it.each(['birth', 'compile'] as const)('rechecks permission before sending %s after recording the operation and permits a later explicit request', async kind => {
+  const { runtime, engine } = await setup()
+  const binding = engine.backendStatus().preparation.sessions.find(session => session.role === 'parent')!
+  const operations: ProductionOperation[] = []
+  let blocked = true, revoke = false, beforeCalls = 0, sends = 0
+  const producer = new ParentProduction(runtime, engine.workspace, () => binding, async () => { beforeCalls++ }, async operation => {
+    operations.push(structuredClone(operation))
+    if (revoke && operation.status === 'requested') blocked = true
+  }, () => { if (blocked) throw new Error('fixture: stopped') })
+  runtime.startTurn = async (parent, text) => {
+    sends++
+    const relative = text.match(/出力先: (production\/[a-f0-9-]+\/result.json)/)![1]
+    await writeFile(path.join(parent.cwd, relative), JSON.stringify({ value: 'next' }))
+    const id = crypto.randomUUID()
+    runtime.emit({ method: 'turn/completed', params: { threadId: parent.threadId, turn: { id, status: 'completed' } } })
+    return id
+  }
+  try {
+    await expect(producer.generate(kind, 'blocked-at-entry', 'fixture', {})).rejects.toThrow('fixture: stopped')
+    expect(beforeCalls).toBe(0)
+    expect(operations).toEqual([])
+    blocked = false; revoke = true
+    await expect(producer.generate(kind, 'blocked-before-send', 'fixture', {})).rejects.toThrow('fixture: stopped')
+    expect(sends).toBe(0)
+    expect(operations.at(-1)).toMatchObject({ targetId: 'blocked-before-send', status: 'failed', turnId: null, error: 'fixture: stopped' })
+    blocked = false; revoke = false
+    expect(await producer.generate(kind, 'next', 'fixture', {})).toEqual({ value: 'next' })
+    expect(sends).toBe(1)
+    expect(operations.at(-1)).toMatchObject({ targetId: 'next', status: 'completed', error: null })
   } finally { await engine.close() }
 })
 it('requires selected relationships to retain their exact supporting memory revisions in the exported package', () => {

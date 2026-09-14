@@ -535,11 +535,12 @@ export class BackendEngine {
   }
   private productionService(): ParentProduction {
     if (!this.producer) this.producer = new ParentProduction(this.runtime, this.workspace, () => this.parent(), async () => {
-      this.writable(); this.ensureConnected()
-      if (this.stopRequested) throw new Error('停止中のため制作処理を開始できません')
       if (await this.runtime.inspect(this.parent().threadId!) !== 'idle') throw new Error('親Conversationが使用中です')
       await this.persistence?.markDirty()
-    }, async operation => { this.production = structuredClone(operation); this.runtime.setThreadPolicy?.(this.parent(), ['requested', 'running', 'uncertain'].includes(operation.status)); await this.persist(); await this.persistence?.flush() })
+    }, async operation => { this.production = structuredClone(operation); this.runtime.setThreadPolicy?.(this.parent(), ['requested', 'running', 'uncertain'].includes(operation.status)); await this.persist(); await this.persistence?.flush() }, () => {
+      this.writable(); this.ensureConnected()
+      if (this.stopRequested) throw new Error('停止中のため制作処理を開始できません')
+    })
     return this.producer
   }
   private async generateBirth(birth: Birth, parents: Resident[], turn: number): Promise<NpcInitialization> {
