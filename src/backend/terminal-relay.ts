@@ -6,6 +6,7 @@ import type { SessionBinding } from '../core/contracts'
 
 const relayEnvelopeSchema = z.object({ id: z.union([z.string(), z.number()]).optional(), method: z.string().optional() }).passthrough()
 const clientEnvelopeSchema = relayEnvelopeSchema.extend({ params: z.record(z.string(), z.unknown()).nullable().optional() })
+interface PendingRequest { method: string; id: string | number; disconnected: boolean }
 
 // Remote TUI supplies cwd on turn/start, which enables the default environment.
 // Keep the host's life-thread capabilities when forwarding that request.
@@ -16,7 +17,7 @@ export class TerminalRelay {
   private endpoint = ''
   private accepting = true
   private readonly readOnly = new Set<string>()
-  private readonly pending = new Set<{ method: string; id: string | number }>()
+  private readonly pending = new Set<PendingRequest>()
   private readonly waiters = new Set<() => void>()
   constructor(private readonly upstream: string, private readonly token: string, private readonly failed: (error: Error) => void) {}
 
@@ -31,11 +32,16 @@ export class TerminalRelay {
       const upstream = new WebSocket(this.upstream, { headers: { Authorization: `Bearer ${this.token}` }, handshakeTimeout: 10000 })
       this.upstreams.add(upstream)
       const queued: string[] = []
-      const requests = new Map<string | number, { method: string; id: string | number }>()
+      const requests = new Map<string | number, PendingRequest>()
       const fail = (error: Error) => { this.failed(new Error(`生活端末接続: ${error.message}`, { cause: error })); client.terminate(); upstream.terminate() }
       client.on('error', fail); upstream.on('error', fail)
       client.on('close', () => upstream.terminate())
-      upstream.on('close', () => { this.upstreams.delete(upstream); client.close() })
+      upstream.on('close', () => {
+        this.upstreams.delete(upstream)
+        for (const request of requests.values()) request.disconnected = true
+        for (const wake of this.waiters) wake()
+        client.close()
+      })
       upstream.on('open', () => { for (const message of queued) upstream.send(message); queued.length = 0 })
       upstream.on('message', data => {
         let message: { id?: string | number; method?: string }
@@ -62,7 +68,7 @@ export class TerminalRelay {
           return
         }
         if (inference && message.id !== undefined) {
-          const request = { method: message.method!, id: message.id }
+          const request = { method: message.method!, id: message.id, disconnected: false }
           requests.set(message.id, request); this.pending.add(request)
         }
         const binding = typeof params?.threadId === 'string' ? this.bindings.get(params.threadId) : undefined
@@ -101,7 +107,13 @@ export class TerminalRelay {
     this.accepting = false
     if (!this.pending.size) return
     await new Promise<void>((resolve, reject) => {
-      const finish = () => { if (!this.pending.size) { clearTimeout(timer); this.waiters.delete(finish); resolve() } }
+      const finish = () => {
+        const disconnected = [...this.pending].filter(request => request.disconnected)
+        if (disconnected.length) {
+          clearTimeout(timer); this.waiters.delete(finish)
+          reject(new Error(`端末接続が終了し、CLI要求の結果を確認できません: ${disconnected.map(request => `${request.method}/${request.id}`).join(', ')}`))
+        } else if (!this.pending.size) { clearTimeout(timer); this.waiters.delete(finish); resolve() }
+      }
       const timer = setTimeout(() => { this.waiters.delete(finish); reject(new Error(`CLI要求の完了を確認できません: ${[...this.pending].map(request => `${request.method}/${request.id}`).join(', ')}`)) }, 30_000)
       this.waiters.add(finish); finish()
     })

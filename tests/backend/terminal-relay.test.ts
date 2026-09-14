@@ -3,6 +3,7 @@ import WebSocket, { WebSocketServer } from 'ws'
 import { TerminalRelay } from '../../src/backend/terminal-relay'
 import { RpcClient } from '../../src/backend/rpc'
 import type { SessionBinding } from '../../src/core/contracts'
+import { once } from 'node:events'
 
 it.each(['client', 'upstream'] as const)('rejects malformed RPC envelopes from %s and continues serving valid messages', async direction => {
   const server = new WebSocketServer({ host: '127.0.0.1', port: 0 })
@@ -124,4 +125,49 @@ it('waits for in-flight CLI mutation acknowledgement while still forwarding its 
     finish!(); await inference; await stopping
     expect(notifications).toContain('turn/started')
   } finally { client.close(); await relay.close(); for (const socket of server.clients) socket.terminate(); await new Promise<void>(resolve => server.close(() => resolve())) }
+})
+
+it.each(['before', 'during'] as const)('reports lost CLI acknowledgements immediately when the connection closes %s shutdown', async timing => {
+  const server = new WebSocketServer({ host: '127.0.0.1', port: 0 })
+  await once(server, 'listening')
+  const address = server.address()
+  if (!address || typeof address === 'string') throw new Error('Missing upstream port')
+  const received: unknown[] = []
+  server.on('connection', socket => socket.on('message', bytes => received.push(JSON.parse(bytes.toString()))))
+  const failures: Error[] = []
+  const relay = new TerminalRelay(`ws://127.0.0.1:${address.port}`, 'token', error => failures.push(error))
+  let client: WebSocket | undefined
+  let stopping: Promise<void> | undefined
+  try {
+    await relay.open()
+    const endpoint = relay.register({ agentId: 'parent', sessionId: 'parent', role: 'parent', threadId: 'thread', cwd: 'work', modelId: 'fixture', effort: 'low', creation: 'initialized', seedPersisted: true, persistenceVersion: 2 })
+    client = new WebSocket(endpoint, { headers: { Authorization: 'Bearer token' } })
+    await once(client, 'open')
+    client.send(JSON.stringify({ id: 7, method: 'turn/start', params: { threadId: 'thread' } }))
+    await vi.waitFor(() => expect(received).toHaveLength(1))
+    vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout'] })
+    let failure: Error | undefined
+    let completed = false
+    const stop = () => relay.quiesce().then(() => { completed = true }, error => { failure = error })
+    if (timing === 'during') stopping = stop()
+    const closed = once(client, 'close')
+    for (const socket of server.clients) socket.terminate()
+    await closed
+    if (timing === 'before') stopping = stop()
+    await vi.waitFor(() => {
+      expect(failure?.message).toContain('端末接続が終了し、CLI要求の結果を確認できません')
+      expect(failure?.message).toContain('turn/start/7')
+    })
+    expect(completed).toBe(false)
+    expect(received).toHaveLength(1)
+    relay.acceptInputs()
+    await expect(relay.quiesce()).rejects.toThrow('turn/start/7')
+  } finally {
+    if (vi.isFakeTimers()) await vi.runAllTimersAsync()
+    await stopping
+    vi.useRealTimers()
+    client?.terminate(); await relay.close()
+    for (const socket of server.clients) socket.terminate()
+    await new Promise<void>(resolve => server.close(() => resolve()))
+  }
 })
