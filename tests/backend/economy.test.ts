@@ -3,7 +3,7 @@ import { mkdir, mkdtemp } from 'node:fs/promises'
 import path from 'node:path'
 import { z } from 'zod'
 import { LifeHarness, lifeCheckpointSchema, type LifeServices } from '../../src/core/life-harness'
-import { applyEconomyTool, economyInventory, economySituation, inheritEconomy, tickEconomy, validateEconomy, validateEconomySeed } from '../../src/core/economy'
+import { applyEconomyTool, economyInventory, economySituation, inheritEconomy, prepareInitialEconomySeed, tickEconomy, validateEconomy, validateEconomySeed } from '../../src/core/economy'
 import { ItemDecisionUncertainError, economySeedSchema, itemDefinitionSchema, itemDecisionSchema, type ItemDefinition } from '../../src/core/economy-contracts'
 import { lifeTransaction } from '../../src/core/life-transaction'
 import { PersistenceStore } from '../../src/backend/persistence-store'
@@ -29,6 +29,47 @@ async function companyFixture() {
   return { ...context, organizationId, owner }
 }
 describe('会社と暮らしの経済', () => {
+  it('distributes two initial foods without charging and makes all initial foods publicly acquirable', async () => {
+    const ids = population.npcs.map(n => n.id)
+    const bread = { ...chicken, id: 'bread', name: 'パン' }
+    const input = { ...seed, catalog: [{ item: chicken, licensees: [] }, { item: bread, licensees: [] }], holdings: [{ npcId: 'npc0', itemId: 'bread', quantity: 1 }] }
+    const prepared = prepareInitialEconomySeed(input, ids, ['office'])
+    expect(input.holdings).toHaveLength(1)
+    expect(prepareInitialEconomySeed(prepared, ids, ['office'])).toEqual(prepared)
+    const saved = savedEconomy(prepared)
+    for (const id of ids) {
+      expect(saved.world.economy!.holdings.filter(h => h.owner.id === id).reduce((n, h) => n + h.quantity, 0)).toBe(2)
+      expect(saved.world.economy!.accounts[`npc:${id}`]).toMatchObject({ balance: 1000, purchases: 0 })
+    }
+    expect(saved.economyArchive!.every(r => r.kind === 'initial' && r.amount === 0)).toBe(true)
+    expect(saved.world.economy!.catalog.every(e => e.publicAcquisition && e.licensees.length === 0)).toBe(true)
+    const { harness, call } = await setup(saved)
+    const args = { itemId: 'bread', quantity: 1, owner: personal('npc1'), storage: { kind: 'carried', actorId: 'npc1' } }
+    const callId = crypto.randomUUID()
+    const bought = await call('npc1', 'acquireItem', args, callId)
+    expect(bought.success).toBe(true)
+    expect(await call('npc1', 'acquireItem', args, callId)).toEqual(bought)
+    expect(harness.snapshot().economy!.accounts['npc:npc1']).toMatchObject({ balance: 900, purchases: 100 })
+    const before = harness.snapshot().economy
+    expect((await call('npc1', 'acquireItem', { ...args, owner: personal('npc0') })).success).toBe(false)
+    expect((await call('npc1', 'acquireItem', { ...args, quantity: 10 })).success).toBe(false)
+    expect(harness.snapshot().economy).toEqual(before)
+    expect(economySituation(harness.snapshot(), 'npc1').catalog.every(e => e.canAcquireAs.some(o => o.id === 'npc1'))).toBe(true)
+    expect(economyInventory(harness.snapshot(), 'npc1', harness.economyHistory('npc1')).acquisitionRights).toEqual([chicken, bread])
+  })
+
+  it('rejects a missing initial food and preserves restricted rights when restoring older worlds', async () => {
+    expect(() => prepareInitialEconomySeed(seed, population.npcs.map(n => n.id), ['office'])).toThrow('初期配布用の食品')
+    const saved = savedEconomy({ ...seed, catalog: [{ item: chicken, licensees: [] }] })
+    delete saved.world.economy!.catalog[0].publicAcquisition
+    saved.world.economy!.catalog[0].licensees = [personal()]
+    const { harness, call } = await setup(saved)
+    expect((await call('npc1', 'acquireItem', { itemId: 'chicken', quantity: 1, owner: personal('npc1'), storage: { kind: 'carried', actorId: 'npc1' } })).success).toBe(false)
+    expect(harness.snapshot().economy!.catalog[0]).toEqual({ item: chicken, licensees: [personal()] })
+    expect(harness.snapshot().economy!.holdings).toEqual([])
+    expect(itemDecisionSchema.safeParse({ decision: 'approved', reason: '公開を要求', item: { ...chicken, publicAcquisition: true } }).success).toBe(false)
+  })
+
   it('requires durability for durable primary goods in validation and the schema sent to the parent', () => {
     const wood = { ...wheat, id: 'wood', name: '木製部材', kind: 'durable', durability: null }
     const input = { ...seed, catalog: [{ item: wood, licensees: [personal()] }] }
@@ -165,7 +206,7 @@ describe('生存・来歴・相続', () => {
   })
 
   it('completes a birth with full vital states and no inherited money at the same boundary', async () => {
-    const saved = savedEconomy(), errors: Error[] = []
+    const saved = savedEconomy({ ...seed, catalog: [{ item: chicken, licensees: [] }] }), errors: Error[] = []
     saved.world.turn = 4; saved.world.phase = 'between'; saved.world.time = 'night'; saved.world.economy!.processedTurn = 4; saved.world.lifecycle!.processedDay = 1
     saved.world.actors.forEach(a => { a.activity = 'ended' })
     saved.world.lifecycle!.births = [{ id: 'birth-1', parents: ['npc2', 'npc3'], homeParentId: 'npc2', dueDay: 1, status: 'scheduled', reason: null, childId: null }]
@@ -189,6 +230,7 @@ describe('生存・来歴・相続', () => {
     expect(harness.snapshot().stage).toBe('paused')
     expect(harness.snapshot().economy!.vitals.child).toMatchObject({ hp: 100, hunger: 100, san: 100, lastWorkTurn: null, heirId: null })
     expect(harness.snapshot().economy!.accounts['npc:child'].balance).toBe(0)
+    expect(economySituation(harness.snapshot(), 'child').catalog[0].canAcquireAs).toEqual([personal('child')])
   })
 
   it('applies hunger, sleep and SAN rules exactly once per boundary and keeps broken tools', () => {
@@ -209,6 +251,7 @@ describe('生存・来歴・相続', () => {
   })
   it('retains gift provenance through transfer and inheritance, excludes simultaneous deaths', () => {
     const saved = savedEconomy({ ...seed, catalog: [{ item: chicken, licensees: [personal()] }], holdings: [{ npcId: 'npc0', itemId: 'chicken', quantity: 2 }] }), world = saved.world, records = saved.economyArchive!
+    world.economy!.catalog.push({ item: { ...chicken, id: 'private-food', name: '申請食品' }, licensees: [personal()] })
     const h = world.economy!.holdings[0]
     const offer = applyEconomyTool(world, 'npc0', 'offerItem', { holdingId: h.id, quantity: 1, unitPrice: 0, targetId: 'npc1' }).result as { offer: { id: string } }
     const gift = applyEconomyTool(world, 'npc1', 'buyItem', { offerId: offer.offer.id, quantity: 1, owner: personal('npc1'), storage: { kind: 'carried', actorId: 'npc1' } }); records.push(...gift.records)
@@ -219,7 +262,8 @@ describe('生存・来歴・相続', () => {
     records.push(...inheritEconomy(world, ['npc0', 'npc1']))
     expect(world.economy!.accounts['npc:npc3'].balance).toBe(2000)
     expect(world.economy!.holdings.filter(h => h.owner.id === 'npc3').every(h => h.storage.kind === 'home' && h.individual)).toBe(true)
-    expect(world.economy!.catalog[0].licensees).toContainEqual(personal('npc3'))
+    expect(world.economy!.catalog.find(e => e.item.id === 'private-food')!.licensees).toContainEqual(personal('npc3'))
+    expect(world.economy!.catalog[0]).toMatchObject({ publicAcquisition: true, licensees: [] })
     const inventory = economyInventory(world, 'npc1', records)
     expect(inventory.provenance.map(r => r.kind)).toEqual(expect.arrayContaining(['initial', 'gift', 'inheritance']))
     validateEconomy(world)

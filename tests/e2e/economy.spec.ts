@@ -34,6 +34,7 @@ test('observes saved assets, vital states, company accounts and item provenance 
     await page.getByRole('button', { name: '経済', exact: true }).click()
     const panel = page.getByRole('region', { name: '経済', exact: true })
     await expect(panel.getByRole('heading', { name: 'ファミチキ', exact: true })).toBeVisible()
+    await expect(panel.getByText('初期公開品 · 誰でも取得可能', { exact: true })).toBeVisible()
     await panel.getByRole('button', { name: '最新100件を読む・更新' }).click()
     await expect(panel.getByText('ファミチキ ×1を贈り物として受け取りました', { exact: true })).toBeVisible()
     await panel.getByRole('button', { name: /住民1/ }).click()

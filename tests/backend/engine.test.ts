@@ -59,7 +59,7 @@ class Runtime implements AgentRuntime {
     if (binding.role === 'parent' && text.includes('Harnessの承認済み制作処理です')) {
       const relative = text.match(/入力資料: (production\/[a-f0-9-]+\/input.json)/)![1]
       const input = JSON.parse(await readFile(path.join(binding.cwd, relative), 'utf8'))
-      await writeFile(path.join(binding.cwd, relative.replace('input.json', 'result.json')), JSON.stringify(input.population ? this.initialEconomy ?? { currency: '円', balances: input.population.npcs.map((n: { id: string }) => ({ npcId: n.id, amount: 1000 })), catalog: [], holdings: [] } : input.request ? { decision: 'approved', reason: 'fixture approval', item: chicken } : { npcId: input.identity.id, lifeSummary: [], personality: [], speechTendency: [], appearance: [], goals: [], behavior: [], schedule: [], runtimeGuidance: '', systemPrompt: '住民として応答する', memoryIds: [], relationshipTargets: [] }))
+      await writeFile(path.join(binding.cwd, relative.replace('input.json', 'result.json')), JSON.stringify(input.population ? this.initialEconomy ?? { currency: '円', balances: input.population.npcs.map((n: { id: string }) => ({ npcId: n.id, amount: 1000 })), catalog: [{ item: { ...chicken, id: 'initial-food', name: '初期食料' }, licensees: [] }], holdings: [] } : input.request ? { decision: 'approved', reason: 'fixture approval', item: chicken } : { npcId: input.identity.id, lifeSummary: [], personality: [], speechTendency: [], appearance: [], goals: [], behavior: [], schedule: [], runtimeGuidance: '', systemPrompt: '住民として応答する', memoryIds: [], relationshipTargets: [] }))
       setTimeout(() => {
         this.listener({ method: 'turn/started', params: { threadId: binding.threadId, turn: { id } } })
         this.listener({ method: 'turn/completed', params: { threadId: binding.threadId, turn: { id, status: 'completed' } } })
@@ -150,7 +150,7 @@ async function review(engine: BackendEngine, runtime: Runtime, configuration = s
 describe('Preparation harness', () => {
   it('rejects an invalid durable seed before initialization and rereads a corrected artifact without regeneration', async () => {
     const { engine, runtime } = await setup(undefined, true)
-    const corrected: EconomySeed = { ...seed, catalog: [{ item: { ...chicken, kind: 'durable', durability: 100 }, licensees: [personal()] }] }
+    const corrected: EconomySeed = { ...seed, catalog: [{ item: { ...chicken, kind: 'durable', durability: 100 }, licensees: [personal()] }, { item: { ...chicken, id: 'initial-food', name: '初期食料' }, licensees: [] }] }
     runtime.initialEconomy = structuredClone(corrected)
     Object.assign(runtime.initialEconomy.catalog[0].item, { durability: null })
     await review(engine, runtime); await engine.backendCommand({ type: 'approve', revision: 1 })
@@ -181,6 +181,8 @@ describe('Preparation harness', () => {
     const { engine, runtime, root } = await setup(undefined, true)
     await review(engine, runtime); await engine.backendCommand({ type: 'approve', revision: 1 }); await complete(engine, runtime, population)
     expect(engine.backendStatus().simulation!.economy!.vitals.npc0).toMatchObject({ hp: 100, hunger: 100, san: 100 })
+    expect(engine.backendStatus().simulation!.economy!.catalog[0]).toMatchObject({ publicAcquisition: true, licensees: [] })
+    for (const npc of population.npcs) expect(engine.backendStatus().simulation!.economy!.holdings.filter(h => h.owner.id === npc.id)).toMatchObject([{ itemId: 'initial-food', quantity: 2 }])
     const parent = engine.backendStatus().preparation.sessions.find(s => s.role === 'parent')!
     const handler = runtime.toolHandler
     let requested = false, busy = true
@@ -208,7 +210,7 @@ describe('Preparation harness', () => {
       runtime.listener({ method: 'turn/completed', params: { threadId: parent.threadId, turn: { id: 'busy-parent', status: 'completed' } } })
     }
     await vi.waitFor(() => expect(engine.backendStatus().simulation?.stage).toBe('paused'), { timeout: 10000 })
-    expect(engine.backendStatus().simulation!.economy!.catalog).toMatchObject([{ item: chicken, licensees: [personal()] }])
+    expect(engine.backendStatus().simulation!.economy!.catalog).toEqual(expect.arrayContaining([expect.objectContaining({ item: chicken, licensees: [personal()] })]))
     expect(runtime.inputs.filter(t => t.includes('NPCからの品物登録申請です'))).toHaveLength(1)
     await engine.close(); engines.delete(engine)
     const restored = await setup(root, true)

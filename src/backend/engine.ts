@@ -2,7 +2,7 @@ import { devStateSchema, type DevState, type DevPanelState } from '../core/dev-c
 import { DevStore, type DevCheckpoint } from './dev-store'
 import { MEMORY_MATCHER_PROMPT } from './memory-matcher'
 import { MEMORY_CONSOLIDATION_PROMPT } from '../core/memory-contracts'
-import { validateEconomySeed } from '../core/economy'
+import { prepareInitialEconomySeed } from '../core/economy'
 import { ECONOMY_NPC_PROMPT, ITEM_DEFINITION_GUIDANCE, ItemDecisionUncertainError, economySeedSchema, itemDecisionSchema, type EconomySeed, type ItemRequest } from '../core/economy-contracts'
 import { ParentProduction } from './production'
 import { ConversationCache } from './conversation-cache'
@@ -840,9 +840,9 @@ NPCのモデルAutoとeffort Autoは独立しています。effortはsettings.np
     p.busy = true; await this.persist()
     if (this.economyVersion && !this.economySeed) {
       if (this.production?.kind === 'economySeed' && ['requested', 'running', 'uncertain'].includes(this.production.status)) throw new Error('初期経済生成の結果が未確定です。自動再送しません')
-      const result = this.production?.kind === 'economySeed' && this.production.status === 'completed' ? JSON.parse(await this.workspace.read(this.production.output)) : await this.productionService().generate('economySeed', 'initial-economy', '初期資金・アイテム・所持品を生成してください。全NPCへ重複なく資金を配分し、食料、回復・娯楽品、一次産品と必要な道具を世界設定に合わせて登録してください。取得権は既存NPCに割り当てます。会社はNPCが生活中に設立します。kind=durableだけ耐久値を指定、他はnull。kind=keepsakeは全数値効果を0にしてください。一次産品はcost=nullとprimary、他の品物はcostとprimary=null。primaryのtoolItemIdは登録する耐久品またはnull。経験・愛着・非家族関係は捏造しません。Schema: ' + JSON.stringify(z.toJSONSchema(economySeedSchema)), { specification: draft.specification, population: p.population })
+      const result = this.production?.kind === 'economySeed' && this.production.status === 'completed' ? JSON.parse(await this.workspace.read(this.production.output)) : await this.productionService().generate('economySeed', 'initial-economy', '初期資金・アイテム・所持品を生成してください。全NPCへ重複なく資金を配分し、食料、回復・娯楽品、一次産品と必要な道具を世界設定に合わせて登録してください。初期食品は誰からの要請でもなく親が登録する公開品です。kind=consumable、effects.hunger>0、costありの食品を最低1種類登録し、食品のlicenseesは空配列にしてください。全NPCが生成費用で取得できます。全NPCの携帯品に食品を合計2個ずつ配布してください。不足分はHarnessが先頭の食品で補います。食品以外の取得権は既存NPCに割り当てます。会社はNPCが生活中に設立します。kind=durableだけ耐久値を指定、他はnull。kind=keepsakeは全数値効果を0にしてください。一次産品はcost=nullとprimary、他の品物はcostとprimary=null。primaryのtoolItemIdは登録する耐久品またはnull。経験・愛着・非家族関係は捏造しません。Schema: ' + JSON.stringify(z.toJSONSchema(economySeedSchema)), { specification: draft.specification, population: p.population })
       try {
-        this.economySeed = validateEconomySeed(result, p.population.npcs.map(n => n.id), draft.specification.town.facilities.map(f => f.id))
+        this.economySeed = prepareInitialEconomySeed(result, p.population.npcs.map(n => n.id), draft.specification.town.facilities.map(f => f.id))
       } catch (error) {
         if (!(error instanceof z.ZodError)) throw error
         throw new Error(`初期経済の成果物が不正です: ${this.production!.output}。${ITEM_DEFINITION_GUIDANCE}\n${error.message}\n成果物を訂正してから「保存済みの状態から再開」を実行してください。自動再生成は行いません`, { cause: error })

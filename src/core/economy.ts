@@ -4,6 +4,8 @@ import { ECONOMY_RULES, economySeedSchema, economyToolSchemas, itemDecisionSchem
 
 export const ownerKey = (owner: Owner) => `${owner.kind}:${owner.id}`
 const sameOwner = (a: Owner, b: Owner) => ownerKey(a) === ownerKey(b)
+const canAcquire = (entry: Economy['catalog'][number], owner: Owner) => entry.publicAcquisition || entry.licensees.some(o => sameOwner(o, owner))
+const initialFood = (definition: ItemDefinition) => definition.kind === 'consumable' && definition.effects.hunger > 0 && definition.cost !== null
 const npcOwner = (id: string): Owner => ({ kind: 'npc', id })
 const companyOwner = (id: string): Owner => ({ kind: 'organization', id })
 const unique = () => crypto.randomUUID()
@@ -90,6 +92,7 @@ export function validateEconomySeed(input: unknown, npcIds: string[], facilityId
   if (JSON.stringify(seed.balances.map(b => b.npcId).sort()) !== JSON.stringify([...npcIds].sort())) throw new LifeRuleError('初期資金は全NPCに重複なく指定してください')
   if (new Set(seed.catalog.map(e => e.item.id)).size !== seed.catalog.length || new Set(seed.catalog.map(e => e.item.name.normalize('NFKC').toLowerCase())).size !== seed.catalog.length) throw new LifeRuleError('初期登録品が重複しています')
   for (const entry of seed.catalog) {
+    if (!initialFood(entry.item) && !entry.licensees.length) throw new LifeRuleError(`初期食品以外には取得権を指定してください: ${entry.item.id}`)
     for (const owner of entry.licensees) if (!(owner.kind === 'npc' ? npcIds : organizationIds).includes(owner.id)) throw new LifeRuleError(`初期取得権の所有者が存在しません: ${ownerKey(owner)}`)
     const primary = entry.item.primary
     if (primary && (!facilityIds.includes(primary.facilityId) || primary.toolItemId && seed.catalog.find(e => e.item.id === primary.toolItemId)?.item.kind !== 'durable')) throw new LifeRuleError(`初期一次産業の施設・道具が不正です: ${entry.item.id}`)
@@ -97,9 +100,19 @@ export function validateEconomySeed(input: unknown, npcIds: string[], facilityId
   for (const value of seed.holdings) if (!npcIds.includes(value.npcId) || !seed.catalog.some(e => e.item.id === value.itemId)) throw new LifeRuleError(`初期所持品の参照が不正です: ${value.npcId}/${value.itemId}`)
   return seed
 }
+export function prepareInitialEconomySeed(input: unknown, npcIds: string[], facilityIds: string[]): EconomySeed {
+  const seed = validateEconomySeed(input, npcIds, facilityIds)
+  const foods = seed.catalog.filter(e => initialFood(e.item))
+  if (!foods.length) throw new LifeRuleError('初期配布用の食品を1種類以上登録してください。kind=consumable、空腹効果>0、生成費用ありの品物が必要です')
+  for (const npcId of npcIds) {
+    const count = seed.holdings.filter(h => h.npcId === npcId && foods.some(f => f.item.id === h.itemId)).reduce((n, h) => n + h.quantity, 0)
+    if (count < ECONOMY_RULES.initialFoodQuantity) seed.holdings.push({ npcId, itemId: foods[0].item.id, quantity: ECONOMY_RULES.initialFoodQuantity - count })
+  }
+  return seed
+}
 export function initializeEconomy(world: SimulationSnapshot, input: EconomySeed): EconomyRecord[] {
   const seed = validateEconomySeed(input, world.actors.map(a => a.id), world.facilities.map(f => f.id), world.organizations?.map(o => o.id))
-  const economy: Economy = { version: 1, currency: seed.currency, processedTurn: 0, catalog: structuredClone(seed.catalog), vitals: {}, accounts: {}, companies: {}, holdings: [], listings: [], employment: [], requests: [] }
+  const economy: Economy = { version: 1, currency: seed.currency, processedTurn: 0, catalog: seed.catalog.map(e => initialFood(e.item) ? { item: e.item, licensees: [], publicAcquisition: true } : e), vitals: {}, accounts: {}, companies: {}, holdings: [], listings: [], employment: [], requests: [] }
   world.economy = economy
   for (const entry of seed.balances) { economy.vitals[entry.npcId] = initialVitals(); economy.accounts[ownerKey(npcOwner(entry.npcId))] = { ...emptyAccount(), balance: entry.amount } }
   for (const organization of world.organizations ?? []) addCompany(economy, organization.id, organization.founderId)
@@ -187,7 +200,7 @@ export function economySituation(world: SimulationSnapshot, actorId: string) {
   const owned = new Set(owners.map(ownerKey))
   return { currency: economy.currency, vitals: economy.vitals[actorId], accounts: Object.fromEntries(owners.map(o => [ownerKey(o), account(economy, o)])),
     holdings: economy.holdings.filter(h => owned.has(ownerKey(h.owner))),
-    catalog: economy.catalog.map(e => ({ item: e.item, canAcquireAs: e.licensees.filter(o => owned.has(ownerKey(o))) })),
+    catalog: economy.catalog.map(e => ({ item: e.item, publicAcquisition: e.publicAcquisition === true, canAcquireAs: owners.filter(o => canAcquire(e, o)) })),
     companies: economy.companies,
     listings: economy.listings.filter(l => !l.targetId || l.targetId === actorId || owned.has(ownerKey(holding(economy, l.holdingId).owner))).map(l => { const h = holding(economy, l.holdingId); return { ...l, itemId: h.itemId, owner: h.owner, storage: h.storage, durability: h.durability } }),
     employment: economy.employment.filter(c => c.employeeId === actorId || economy.companies[c.organizationId].managerId === actorId || c.status === 'offered' && c.employeeId === null),
@@ -203,8 +216,8 @@ export function economyInventory(world: SimulationSnapshot, actorId: string, rec
   const pending = [...ids]
   while (pending.length) for (const previous of indexed.get(pending.pop()!)?.previousIds ?? []) if (!ids.has(previous)) { ids.add(previous); pending.push(previous) }
   return { version: 1 as const, npcId: actorId, currency: economy.currency, vitals: economy.vitals[actorId], account: account(economy, npcOwner(actorId)), holdings: values,
-    acquisitionRights: economy.catalog.filter(e => e.licensees.some(o => sameOwner(o, npcOwner(actorId)))).map(e => e.item),
-    companies: Object.entries(economy.companies).filter(([, c]) => c.managerId === actorId).map(([organizationId]) => ({ organizationId, account: account(economy, companyOwner(organizationId)), holdings: economy.holdings.filter(h => sameOwner(h.owner, companyOwner(organizationId))), acquisitionRights: economy.catalog.filter(e => e.licensees.some(o => sameOwner(o, companyOwner(organizationId)))).map(e => e.item) })),
+    acquisitionRights: economy.catalog.filter(e => canAcquire(e, npcOwner(actorId))).map(e => e.item),
+    companies: Object.entries(economy.companies).filter(([, c]) => c.managerId === actorId).map(([organizationId]) => ({ organizationId, account: account(economy, companyOwner(organizationId)), holdings: economy.holdings.filter(h => sameOwner(h.owner, companyOwner(organizationId))), acquisitionRights: economy.catalog.filter(e => canAcquire(e, companyOwner(organizationId))).map(e => e.item) })),
     employment: economy.employment.filter(c => c.employeeId === actorId),
     catalog: economy.catalog.filter(e => values.some(v => v.itemId === e.item.id)).map(e => e.item),
     provenance: records.filter(r => ids.has(r.id)), experiences: records.filter(r => r.participants.includes(actorId)) }
@@ -245,7 +258,7 @@ export function applyEconomyTool(world: SimulationSnapshot, actorId: string, too
     case 'acquireItem': {
       const v = economyToolSchemas.acquireItem.parse(input), entry = item(economy, v.itemId)
       authorize(economy, actorId, v.owner); destination(world, actorId, v.owner, v.storage)
-      if (!entry.licensees.some(o => sameOwner(o, v.owner)) || entry.item.cost === null) throw new LifeRuleError(`生成費用で取得する権利がありません: ${v.itemId}/${ownerKey(v.owner)}`)
+      if (!canAcquire(entry, v.owner) || entry.item.cost === null) throw new LifeRuleError(`生成費用で取得する権利がありません: ${v.itemId}/${ownerKey(v.owner)}`)
       const amount = checked(entry.item.cost * v.quantity)
       debit(economy, v.owner, amount); account(economy, v.owner).purchases = checked(account(economy, v.owner).purchases + amount)
       const r = log(record(world, actorId, 'acquire', `${entry.item.name} ×${v.quantity}を${amount}${economy.currency}で取得しました`, [v.owner], [], amount))
