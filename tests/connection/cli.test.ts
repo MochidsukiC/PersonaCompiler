@@ -3,6 +3,9 @@ import http from 'node:http'
 import path from 'node:path'
 import { mkdir, mkdtemp, writeFile } from 'node:fs/promises'
 import { setTimeout as delay } from 'node:timers/promises'
+import { execFile } from 'node:child_process'
+import { createRequire } from 'node:module'
+import { promisify } from 'node:util'
 import { CodexRuntime } from '../../src/backend/runtime'
 import { PtyTerminals } from '../../src/backend/terminals'
 import type { RpcNotification } from '../../src/backend/rpc'
@@ -68,6 +71,21 @@ it('shares a real remote Codex TUI and backend thread using a local Responses fi
     await terminals.input('parent', '端末からの入力\r')
     await wait(() => requests.some(body => body.includes('端末からの入力')), 'Japanese terminal input')
     await wait(() => events.filter(e => e.method === 'turn/completed').length >= 2, 'TUI completion')
+    const electron = createRequire(import.meta.url)('electron') as string
+    const env = Object.fromEntries(Object.entries(process.env).filter(([key, value]) => key !== 'ELECTRON_RUN_AS_NODE' && value !== undefined)) as Record<string, string>
+    await promisify(execFile)(electron, [path.resolve('tests/fixtures/clipboard-image.mjs')], { env, windowsHide: true, timeout: 10000 })
+    const imageRequestIndex = requests.length
+    await terminals.input('parent', '\x16')
+    await wait(async () => (await terminals.snapshot('parent')).data.includes('[Image #1]'), 'image attachment in real TUI')
+    expect(requests).toHaveLength(imageRequestIndex)
+    await terminals.input('parent', '画像の入力を確認してください')
+    await delay(300)
+    await terminals.input('parent', '\r')
+    await wait(() => requests.length > imageRequestIndex, 'image request from real TUI')
+    const imageRequest = JSON.parse(requests[imageRequestIndex]) as { input: { type: string; role?: string; content?: { type: string; image_url?: string }[] }[] }
+    const imageInput = imageRequest.input.findLast(item => item.role === 'user')!.content!.find(part => part.type === 'input_image')
+    expect(imageInput?.image_url).toMatch(/^data:image\/png;base64,/)
+    await wait(() => events.filter(e => e.method === 'turn/completed').length >= 3, 'image turn completion')
     const before = await terminals.snapshot('parent')
     await terminals.attach(binding)
     expect((await terminals.snapshot('parent')).sequence).toBeGreaterThanOrEqual(before.sequence)

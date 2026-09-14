@@ -48,7 +48,7 @@ chokidar 5.0.0にも[監視開始順序のパッチ](improvements/48-watch-befor
 6. 施設モデルが承認済みサイズ内の用途付き領域を設定します。住宅街は全世帯へ1軒ずつ家を配置し、NPCが自分の入場座標を選びます。全対象の検証後に `ready` になります。
 7. 「生活を開始」または「1ターン実行」を押します。朝・昼・夕・夜の順に進み、ターン上限で停止します。町の施設にある「内部へ」から、回転・ズーム・高さ上限・家の選択ができる3D画面を開けます。NPCの選択は既存の端末へ接続します。
 
-端末は実Codex CLIです。タブを閉じてもCLIとConversationは維持され、再表示時はheadless terminalのsnapshotと連番chunkから復元します。テキスト選択中のCtrl+Cはコピー、未選択のCtrl+C・停止ボタンは推論の中断です。推論していないときの中断操作でCLIを終了させません。CLIを `/exit` などで終了した場合は、端末右上の「再接続」でその端末だけを同じConversationへ戻せます。推論中も再接続でき、推論を再送しません。
+端末は実Codex CLIです。タブを閉じてもCLIとConversationは維持され、再表示時はheadless terminalのsnapshotと連番chunkから復元します。テキスト選択中のCtrl+Cはコピー、未選択のCtrl+C・停止ボタンは推論の中断です。Ctrl+Vはクリップボードの文字を貼り付け、画像が含まれる場合は画像を添付します。改行を含む文字はCLIの貼り付けモードで渡し、Enterで送信します。推論していないときの中断操作でCLIを終了させません。CLIを `/exit` などで終了した場合は、端末右上の「再接続」でその端末だけを同じConversationへ戻せます。推論中も再接続でき、推論を再送しません。
 
 親Sessionは代理承認モード（`approvalPolicy: on-request`、`approvalsReviewer: auto_review`）です。作業領域は`workspace-write`を維持し、追加権限の要求はCodexの自動レビューへ送ります。新規NPC・施設は `environments: []` と役割別dynamicToolsを使います。実CLIのcwd指定が環境を再有効化しないよう、localhostの認証付き中継が設定を維持します。Windowsのリダイレクトやjunctionに備えて、Session作成・復帰時の作業先とCODEX_HOMEは実体パスへ正規化します。
 

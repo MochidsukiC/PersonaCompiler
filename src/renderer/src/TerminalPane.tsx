@@ -44,6 +44,18 @@ export function TerminalPane({ agent, real = false, connected = true, memoryEnab
         if (event.type === 'keydown' && !event.repeat) void navigator.clipboard.writeText(terminal.getSelection()).catch(report)
         return false
       }
+      if (event.ctrlKey && !event.altKey && !event.metaKey && !event.shiftKey && event.key.toLowerCase() === 'v') {
+        event.preventDefault()
+        if (event.type === 'keydown' && !event.repeat) void navigator.clipboard.read().then(async items => {
+          if (disposed) return
+          if (items.some(item => item.types.some(type => type.startsWith('image/')))) { terminal.input('\x16'); return }
+          const item = items.find(item => item.types.includes('text/plain'))
+          if (!item) throw new Error('クリップボードに貼り付け可能な文字または画像がありません')
+          const text = await (await item.getType('text/plain')).text()
+          if (!disposed && text) terminal.paste(text)
+        }).catch(report)
+        return false
+      }
       return true
     })
     const apply = (chunk: TerminalChunk) => {
