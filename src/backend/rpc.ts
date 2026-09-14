@@ -1,12 +1,12 @@
 import WebSocket from 'ws'
 import { z } from 'zod'
+import { rpcEnvelopeSchema } from './rpc-envelope'
 
 export interface RpcNotification { method: string; params: unknown }
 export type RpcRequestHandler = (method: string, params: unknown) => Promise<unknown>
 export class RpcError extends Error {
   constructor(readonly method: string, readonly code: number, message: string) { super(`${method}: ${message} (${code})`); this.name = 'RpcError' }
 }
-const envelopeSchema = z.object({ id: z.union([z.number(), z.string()]).optional(), method: z.string().optional(), params: z.unknown().optional(), result: z.unknown().optional(), error: z.object({ code: z.number(), message: z.string() }).optional() })
 
 export class RpcClient {
   private sequence = 0
@@ -21,8 +21,8 @@ export class RpcClient {
     this.socket = socket
     socket.on('message', data => {
       if (this.socket !== socket) return
-      let parsed: z.infer<typeof envelopeSchema>
-      try { parsed = envelopeSchema.parse(JSON.parse(data.toString())) }
+      let parsed: z.infer<typeof rpcEnvelopeSchema>
+      try { parsed = rpcEnvelopeSchema.parse(JSON.parse(data.toString())) }
       catch (error) { this.fail(new Error('Codexから不正なRPCメッセージを受信しました', { cause: error })); return }
       if (parsed.method) {
         if (parsed.id !== undefined) {

@@ -3,9 +3,9 @@ import { timingSafeEqual } from 'node:crypto'
 import { z } from 'zod'
 import type { IncomingMessage } from 'node:http'
 import type { SessionBinding } from '../core/contracts'
+import { rpcEnvelopeSchema } from './rpc-envelope'
 
-const relayEnvelopeSchema = z.object({ id: z.union([z.string(), z.number()]).optional(), method: z.string().optional() }).passthrough()
-const clientEnvelopeSchema = relayEnvelopeSchema.extend({ params: z.record(z.string(), z.unknown()).nullable().optional() })
+const clientEnvelopeSchema = rpcEnvelopeSchema.safeExtend({ params: z.record(z.string(), z.unknown()).nullable().optional() })
 interface PendingRequest { method: string; id: string | number; disconnected: boolean }
 
 // Remote TUI supplies cwd on turn/start, which enables the default environment.
@@ -44,8 +44,9 @@ export class TerminalRelay {
       })
       upstream.on('open', () => { for (const message of queued) upstream.send(message); queued.length = 0 })
       upstream.on('message', data => {
+        if (upstream.readyState !== WebSocket.OPEN) return
         let message: { id?: string | number; method?: string }
-        try { message = relayEnvelopeSchema.parse(JSON.parse(data.toString())) }
+        try { message = rpcEnvelopeSchema.parse(JSON.parse(data.toString())) }
         catch (error) { fail(new Error('App Serverが不正なRPCメッセージを返しました', { cause: error })); return }
         if (!message.method && message.id !== undefined) {
           const request = requests.get(message.id)

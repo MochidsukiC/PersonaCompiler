@@ -2,6 +2,29 @@ import { expect, it } from 'vitest'
 import { WebSocketServer } from 'ws'
 import { RpcClient } from '../../src/backend/rpc'
 
+it.each(['missing', 'both'] as const)('rejects a response with %s result/error instead of completing the request', async kind => {
+  const server = new WebSocketServer({ host: '127.0.0.1', port: 0 })
+  await new Promise<void>(resolve => server.once('listening', resolve))
+  const address = server.address()
+  if (!address || typeof address === 'string') throw new Error('No fixture address')
+  server.on('connection', socket => socket.on('message', bytes => {
+    const request = JSON.parse(bytes.toString())
+    if (request.id === undefined) return
+    if (request.method === 'malformed') socket.send(JSON.stringify({ id: request.id, ...(kind === 'both' ? { result: null, error: { code: -32603, message: 'fixture failure' } } : {}) }))
+    else socket.send(JSON.stringify({ id: request.id, result: null }))
+  }))
+  const failures: Error[] = []
+  const client = new RpcClient(() => undefined, error => failures.push(error))
+  try {
+    await client.connect(`ws://127.0.0.1:${address.port}`, 'fixture-token')
+    expect(await client.request('null-result')).toBeNull()
+    await expect(client.request('malformed')).rejects.toThrow('不正なRPC')
+    await expect.poll(() => server.clients.size).toBe(0)
+    expect(failures).toHaveLength(1)
+    await expect(client.request('after-failure')).rejects.toThrow('接続されていません')
+  } finally { client.close(); for (const socket of server.clients) socket.terminate(); await new Promise<void>(resolve => server.close(() => resolve())) }
+})
+
 it.each(['null', '{broken'])('disconnects on invalid RPC %s and ignores subsequent messages until explicit reconnect', async invalid => {
   const server = new WebSocketServer({ host: '127.0.0.1', port: 0 })
   await new Promise<void>(resolve => server.once('listening', resolve))

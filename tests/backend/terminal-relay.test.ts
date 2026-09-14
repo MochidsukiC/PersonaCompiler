@@ -5,6 +5,33 @@ import { RpcClient } from '../../src/backend/rpc'
 import type { SessionBinding } from '../../src/core/contracts'
 import { once } from 'node:events'
 
+it.each(['missing', 'both', 'invalid-error'] as const)('keeps mutation acknowledgements uncertain after a %s response and ignores a later response', async kind => {
+  const server = new WebSocketServer({ host: '127.0.0.1', port: 0 })
+  await once(server, 'listening')
+  const address = server.address()
+  if (!address || typeof address === 'string') throw new Error('Missing upstream port')
+  server.on('connection', socket => socket.on('message', bytes => {
+    const request = JSON.parse(bytes.toString())
+    socket.send(JSON.stringify({ id: request.id, ...(kind === 'both' ? { result: null, error: { code: -32603, message: 'fixture failure' } } : kind === 'invalid-error' ? { error: 'invalid' } : {}) }))
+    socket.send(JSON.stringify({ id: request.id, result: null }))
+  }))
+  const failures: Error[] = [], replies: unknown[] = []
+  const relay = new TerminalRelay(`ws://127.0.0.1:${address.port}`, 'token', error => failures.push(error))
+  let client: WebSocket | undefined
+  try {
+    await relay.open()
+    const endpoint = relay.register({ agentId: 'parent', sessionId: 'parent', role: 'parent', threadId: 'thread', cwd: 'work', modelId: 'fixture', effort: 'low', creation: 'initialized', seedPersisted: true, persistenceVersion: 2 })
+    client = new WebSocket(endpoint, { headers: { Authorization: 'Bearer token' } })
+    client.on('message', bytes => replies.push(JSON.parse(bytes.toString())))
+    await once(client, 'open')
+    client.send(JSON.stringify({ id: 7, method: 'turn/start', params: { threadId: 'thread' } }))
+    await vi.waitFor(() => expect(failures.some(error => error.message.includes('不正なRPC'))).toBe(true))
+    await vi.waitFor(() => expect(client!.readyState).toBe(WebSocket.CLOSED))
+    expect(replies).toEqual([])
+    await expect(relay.quiesce()).rejects.toThrow('turn/start/7')
+  } finally { client?.terminate(); await relay.close(); for (const socket of server.clients) socket.terminate(); await new Promise<void>(resolve => server.close(() => resolve())) }
+})
+
 it.each(['client', 'upstream'] as const)('rejects malformed RPC envelopes from %s and continues serving valid messages', async direction => {
   const server = new WebSocketServer({ host: '127.0.0.1', port: 0 })
   await new Promise<void>(resolve => server.once('listening', resolve))
@@ -98,7 +125,7 @@ it('authenticates the TUI relay and keeps life environment, model and effort ove
   }
 })
 
-it('waits for in-flight CLI mutation acknowledgement while still forwarding its notifications', async () => {
+it.each([null, false, 0, '', { turn: { id: 'turn' } }])('waits for in-flight CLI mutation acknowledgement %j while still forwarding its notifications', async acknowledgement => {
   const server = new WebSocketServer({ host: '127.0.0.1', port: 0 })
   await new Promise<void>(resolve => server.once('listening', resolve))
   const address = server.address()
@@ -106,7 +133,7 @@ it('waits for in-flight CLI mutation acknowledgement while still forwarding its 
   let finish: (() => void) | undefined
   server.on('connection', socket => socket.on('message', bytes => {
     const message = JSON.parse(bytes.toString())
-    if (message.method === 'turn/start') { finish = () => { socket.send(JSON.stringify({ method: 'turn/started', params: { turn: { id: 'turn' } } })); socket.send(JSON.stringify({ id: message.id, result: { turn: { id: 'turn' } } })) }; return }
+    if (message.method === 'turn/start') { finish = () => { socket.send(JSON.stringify({ method: 'turn/started', params: { turn: { id: 'turn' } } })); socket.send(JSON.stringify({ id: message.id, result: acknowledgement })) }; return }
     if (message.id !== undefined) socket.send(JSON.stringify({ id: message.id, result: {} }))
   }))
   const relay = new TerminalRelay(`ws://127.0.0.1:${address.port}`, 'token', error => { throw error })
@@ -122,7 +149,7 @@ it('waits for in-flight CLI mutation acknowledgement while still forwarding its 
     const stopping = relay.quiesce().then(() => { stopped = true })
     await client.request('thread/read', { threadId: 'thread' })
     expect(stopped).toBe(false)
-    finish!(); await inference; await stopping
+    finish!(); expect(await inference).toEqual(acknowledgement); await stopping
     expect(notifications).toContain('turn/started')
   } finally { client.close(); await relay.close(); for (const socket of server.clients) socket.terminate(); await new Promise<void>(resolve => server.close(() => resolve())) }
 })
