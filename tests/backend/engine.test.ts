@@ -145,6 +145,49 @@ async function review(engine: BackendEngine, runtime: Runtime, configuration = s
 }
 
 describe('Preparation harness', () => {
+  it('registers parent event tools and authorizes only the current parent turn, retaining schedules on reconnect', async () => {
+    const { engine, runtime, root } = await setup()
+    const creation = vi.spyOn(runtime, 'create')
+    await review(engine, runtime); await engine.backendCommand({ type: 'approve', revision: 1 }); await complete(engine, runtime, population)
+    const parent = engine.backendStatus().preparation.sessions.find(s => s.role === 'parent')!
+    expect(parent.worldEventToolsVersion).toBe(1)
+    expect(creation.mock.calls[0]).toEqual([expect.anything(), expect.stringContaining('scheduleWorldEvent'), { disableEnvironment: false, tools: expect.arrayContaining([expect.objectContaining({ name: 'triggerWorldEvent' }), expect.objectContaining({ name: 'scheduleWorldEvent' })]) }])
+    const call: RuntimeToolCall = { threadId: parent.threadId!, turnId: 'event-turn', callId: 'event-call', namespace: null, tool: 'scheduleWorldEvent', arguments: { title: '星祭り', type: '祭事', description: '広場で祭りが始まる', target: { scope: 'world' }, at: { day: 1, time: 'morning' } } }
+    expect((await runtime.toolHandler(call)).success).toBe(false)
+    runtime.listener({ method: 'turn/started', params: { threadId: parent.threadId, turn: { id: call.turnId } } })
+    expect((await runtime.toolHandler({ ...call, namespace: 'forged' })).success).toBe(false)
+    expect((await runtime.toolHandler({ ...call, threadId: 'thread-npc0' })).success).toBe(false)
+    expect((await runtime.toolHandler(call)).success).toBe(true)
+    expect((await runtime.toolHandler(call)).success).toBe(true)
+    expect((await runtime.toolHandler({ ...call, callId: 'other-tool', tool: 'buildFacility' })).success).toBe(false)
+    runtime.listener({ method: 'turn/completed', params: { threadId: parent.threadId, turn: { id: call.turnId, status: 'completed' } } })
+    expect((await runtime.toolHandler({ ...call, callId: 'stale' })).success).toBe(false)
+    await engine.pause()
+    runtime.listener({ method: 'turn/started', params: { threadId: parent.threadId, turn: { id: 'paused-parent' } } })
+    expect((await runtime.toolHandler({ ...call, turnId: 'paused-parent', callId: 'list', tool: 'getWorldEvents', arguments: {} })).success).toBe(true)
+    runtime.listener({ method: 'turn/completed', params: { threadId: parent.threadId, turn: { id: 'paused-parent', status: 'completed' } } })
+    await vi.waitFor(() => expect(engine.backendStatus().simulation?.worldEvents).toHaveLength(1))
+    await engine.close(); engines.delete(engine)
+    const next = await setup(root)
+    expect(next.engine.backendStatus().simulation?.worldEvents).toMatchObject([{ title: '星祭り', status: 'scheduled' }])
+    expect(next.runtime.resumed.find(s => s.agentId === 'parent')?.instructions).toContain('scheduleWorldEvent')
+    await next.engine.backendCommand({ type: 'startSimulation', step: true })
+    await vi.waitFor(() => expect(next.engine.backendStatus().simulation?.stage).toBe('paused'), { timeout: 10000 })
+    expect(next.engine.backendStatus().simulation?.worldEvents).toMatchObject([{ status: 'occurred' }])
+    expect(next.engine.backendStatus().simulation?.events.filter(e => e.kind === 'world')).toHaveLength(1)
+    expect(next.engine.backendStatus().preparation.error).toBeNull()
+    const run = next.engine.workspace.root
+    await next.engine.close(); engines.delete(next.engine)
+    const saved = JSON.parse(await readFile(path.join(run, 'backend.json'), 'utf8'))
+    delete saved.preparation.sessions.find((s: SessionBinding) => s.role === 'parent').worldEventToolsVersion
+    await writeFile(path.join(run, 'backend.json'), JSON.stringify(saved))
+    const legacy = await setup(root)
+    expect(legacy.runtime.resumed.find(s => s.agentId === 'parent')?.instructions).not.toContain('scheduleWorldEvent')
+    legacy.runtime.listener({ method: 'turn/started', params: { threadId: parent.threadId, turn: { id: 'old-parent' } } })
+    expect((await legacy.runtime.toolHandler({ ...call, turnId: 'old-parent', callId: 'old-call' })).success).toBe(false)
+    legacy.runtime.listener({ method: 'turn/completed', params: { threadId: parent.threadId, turn: { id: 'old-parent', status: 'completed' } } })
+  })
+
   it('retains a facility created during pause without starting inference until resume', async () => {
     const { engine, runtime } = await setup()
     await review(engine, runtime); await engine.backendCommand({ type: 'approve', revision: 1 }); await complete(engine, runtime, population)

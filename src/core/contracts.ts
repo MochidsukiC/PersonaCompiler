@@ -91,6 +91,7 @@ export const sessionBindingSchema = z.object({
   threadId: z.string().nullable(), cwd: z.string(), modelId: z.string(), effort: effortSchema,
   lifecycleVersion: z.literal(1).optional(),
   communityToolsVersion: z.union([z.literal(1), z.literal(2)]).optional(),
+  worldEventToolsVersion: z.literal(1).optional(),
   creation: z.enum(['requested', 'created', 'initialized']), seedPersisted: z.boolean(), lifeToolsVersion: z.literal(1).optional(), persistenceVersion: z.literal(2).optional(), memoryVersion: z.literal(1).optional()
 })
 export type SessionBinding = z.infer<typeof sessionBindingSchema>

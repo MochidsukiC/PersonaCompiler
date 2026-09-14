@@ -58,6 +58,7 @@
 | `git log --oneline -- improvements/52-design-deviation-choice.md`で確認 | 人口総数・年齢分布・性別比率の差異に「気にせず続行」「訂正を指示」を追加 | [52](52-design-deviation-choice.md) |
 | `git log --oneline -- improvements/53-autonomous-organizations.md`で確認 | AI住民の組織設立・自己加入脱退・公開一覧・出来事記録 | [53](53-autonomous-organizations.md) |
 | `git log --oneline -- improvements/54-autonomous-facility-construction.md`で確認 | AI住民の組織・個人施設の建設、担当AI初期化、地図追加・移動・利用 | [54](54-autonomous-facility-construction.md) |
+| `git log --oneline -- improvements/55-parent-world-events.md`で確認 | 親セッションによる突発・日時予約イベント、通知対象、予約一覧・取消・保存再開 | [55](55-parent-world-events.md) |
 
 各コミットの直後に差分の自己レビューを実施しました。機能ごとに取り消す場合は、作業ツリーの変更を確認したうえで`git revert <commit>`を使えます。全体を戻す場合は表の下から上の順にrevertしてください。
 

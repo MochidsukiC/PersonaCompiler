@@ -94,6 +94,80 @@ async function call(harness: LifeHarness, id: string, tool: string, args: unknow
 }
 
 describe('Residential space', () => {
+  it.each([false, true])('persists parent events, notification scope and duplicate receipts (memory=%s)', async memory => {
+    const changes: LifeChange[] = [], services = new Services()
+    if (memory) Object.assign(services, { memory: { initialize: () => undefined, changed: (change: LifeChange) => changes.push(structuredClone(change)) } })
+    const { harness } = await setup(12, undefined, services)
+    const request = { turnId: 'parent-turn', callId: 'sudden', tool: 'triggerWorldEvent', arguments: { title: '流星', type: '天候', description: '流星が見えた', target: { scope: 'actors', actorIds: ['npc0'] } } }
+    expect((await harness.parentTool(request, () => false)).success).toBe(false)
+    expect((await harness.parentTool(request, () => true)).success).toBe(true)
+    expect(await harness.parentTool(request, () => true)).toEqual(await harness.parentTool(request, () => true))
+    expect(harness.snapshot().worldEvents).toMatchObject([{ status: 'occurred', eventSequence: 6 }])
+    expect(harness.snapshot().events.filter(e => e.kind === 'world')).toMatchObject([{ kind: 'world', actorId: 'parent', locationId: null, recipients: ['npc0'] }])
+    expect(harness.checkpoint().jobs.filter(j => j.text.includes('worldEvent'))).toMatchObject([{ agentId: 'npc0', status: 'deferred' }])
+    const restored = await setup(12, harness.checkpoint())
+    expect(restored.harness.snapshot().worldEvents).toEqual(harness.snapshot().worldEvents)
+    await harness.start(true); await active(harness)
+    expect((await call(harness, 'npc0', 'getSituation')).contentItems[0].text).not.toContain('worldEvents')
+    expect((await call(harness, 'npc0', 'triggerWorldEvent', request.arguments)).success).toBe(false)
+    await expect(harness.parentTool({ ...request, arguments: { ...request.arguments, title: '別の内容' } }, () => true)).rejects.toThrow('同じTool ID')
+    if (memory) expect(changes.some(c => c.history.some(h => h.kind === 'event') && c.history.some(h => h.kind === 'receipt') && c.patches.some(p => p.path.join('.') === 'world.worldEvents'))).toBe(true)
+    expect(services.errors).toEqual([])
+  })
+
+  it.each([false, true])('fires scheduled events once after entry, supports cancellation and restart (memory=%s)', async memory => {
+    const services = new Services(), changes: LifeChange[] = []
+    if (memory) Object.assign(services, { memory: { initialize: () => undefined, changed: (change: LifeChange) => changes.push(structuredClone(change)) } })
+    const { harness } = await setup(12, undefined, services)
+    const issue = (tool: string, args: unknown) => harness.parentTool({ turnId: 'parent', callId: crypto.randomUUID(), tool, arguments: args }, () => true)
+    const value = { title: '祭り', type: '行事', description: '市場が開く', target: { scope: 'location', locationId: 'home' }, at: { day: 1, time: 'noon' } }
+    expect((await issue('scheduleWorldEvent', value)).success).toBe(true)
+    const cancelled = JSON.parse((await issue('scheduleWorldEvent', { ...value, title: '取消行事' })).contentItems[0].text)
+    expect((await issue('cancelWorldEvent', { eventId: cancelled.id })).success).toBe(true)
+    expect(harness.snapshot().events.filter(e => e.kind === 'world')).toEqual([])
+    await harness.start(true); await active(harness)
+    const target = harness.snapshot().facilities.find(f => f.locationId !== 'home')!
+    expect((await call(harness, 'npc0', 'moveToFacility', { facilityId: target.id })).success).toBe(true)
+    for (const a of harness.snapshot().actors) { if (a.id !== 'npc0') await call(harness, a.id, 'endTurn'); services.finish(a.id) }
+    await vi.waitFor(() => expect(harness.snapshot().stage).toBe('paused'))
+    expect(harness.snapshot().events.filter(e => e.kind === 'world')).toEqual([])
+    await harness.close(); running.delete(harness)
+    const restoredServices = new Services()
+    if (memory) Object.assign(restoredServices, { memory: { initialize: () => undefined, changed: (change: LifeChange) => changes.push(structuredClone(change)) } })
+    const restored = await setup(12, harness.checkpoint(), restoredServices)
+    await restored.harness.resume(true); await active(restored.harness)
+    const events = restored.harness.snapshot().events.filter(e => e.kind === 'world')
+    expect(events).toHaveLength(1)
+    expect(events[0]).toMatchObject({ turn: 2, locationId: 'home', recipients: ['npc1', 'npc2', 'npc3', 'npc4'] })
+    expect(restored.harness.snapshot().worldEvents?.map(p => p.status)).toEqual(['occurred', 'cancelled'])
+    if (memory) expect(changes.some(c => c.history.some(h => h.kind === 'event' && h.value.kind === 'world') && c.patches.some(p => p.path.join('.') === 'world.worldEvents'))).toBe(true)
+    expect((await restored.harness.parentTool({ turnId: 'parent', callId: 'cancel-late', tool: 'cancelWorldEvent', arguments: { eventId: restored.harness.snapshot().worldEvents![0].id } }, () => true)).success).toBe(false)
+    for (const a of restored.harness.snapshot().actors) { await call(restored.harness, a.id, 'endTurn'); restored.services.finish(a.id) }
+    await vi.waitFor(() => expect(restored.harness.snapshot().stage).toBe('paused'))
+    await restored.harness.resume(true); await active(restored.harness)
+    expect(restored.harness.snapshot().events.filter(e => e.kind === 'world')).toHaveLength(1)
+    expect(restored.services.errors).toEqual([])
+  })
+
+  it('rejects invalid event targets and times and defers sleeping recipients', async () => {
+    const { harness, services } = await setup(12)
+    const issue = (tool: string, args: unknown) => harness.parentTool({ turnId: 'parent', callId: crypto.randomUUID(), tool, arguments: args }, () => true)
+    const value = { title: '警報', type: '危機', description: '門で警報が鳴る', target: { scope: 'world' } }
+    await harness.start(true); await active(harness)
+    for (const at of [{ day: 1, time: 'morning' }, { day: 4, time: 'morning' }, { day: 0, time: 'night' }]) expect((await issue('scheduleWorldEvent', { ...value, at })).success).toBe(false)
+    for (const target of [{ scope: 'location', locationId: 'missing' }, { scope: 'actors', actorIds: ['missing'] }, { scope: 'actors', actorIds: ['npc0', 'npc0'] }]) expect((await issue('triggerWorldEvent', { ...value, target })).success).toBe(false)
+    expect(harness.snapshot().worldEvents).toBeUndefined()
+    await call(harness, 'npc0', 'sleep')
+    expect((await issue('triggerWorldEvent', value)).success).toBe(true)
+    expect(harness.checkpoint().jobs.find(j => j.agentId === 'npc0' && j.text.includes('worldEvent'))?.status).toBe('deferred')
+    expect(harness.snapshot().events.at(-1)?.recipients).toHaveLength(5)
+    const checkpoint = harness.checkpoint()
+    checkpoint.world.worldEvents![0].target = { scope: 'actors', actorIds: ['missing'] }
+    await expect(setup(12, checkpoint)).rejects.toThrow('NPCが見つかりません')
+    services.finish('npc0'); await harness.drain()
+    expect(services.errors).toEqual([])
+  })
+
   it.each([false, true])('builds organization facilities, gates entry until ready and restores construction (memory=%s)', async memory => {
     const changes: LifeChange[] = []
     const services = new Services()

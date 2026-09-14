@@ -28,7 +28,7 @@ export function eventReportMarkdown(input: EventReportInput, capturedAt: string)
   if (!input.events.length) lines.push('条件に一致する出来事はありません。', '')
   for (const event of input.events) {
     lines.push(`## #${event.sequence} · Turn ${event.turn} · ${eventLabels[event.kind]}`, '',
-      quote(`行動者: ${person(event.actorId)}\n場所: ${places.get(event.locationId) ?? event.locationId} (${event.locationId})\n位置: ${event.position ? JSON.stringify(event.position) : '未設定'}`), '',
+      quote(`行動者: ${event.kind === 'world' ? '親セッション' : person(event.actorId)}\n場所: ${event.locationId === null ? '場所指定なし' : `${places.get(event.locationId) ?? event.locationId} (${event.locationId})`}\n位置: ${event.position ? JSON.stringify(event.position) : '未設定'}`), '',
       quote(event.text), '', quote(`受信対象: ${event.recipients.length ? event.recipients.map(person).join(' / ') : '0人'}${event.volume ? `\n声量: ${event.volume}` : ''}`), '')
   }
   lines.push('## 出来事の元データ', '', '```json', JSON.stringify(input.events, null, 2), '```', '')

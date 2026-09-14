@@ -1,6 +1,7 @@
 import { z } from 'zod'
 import { memoryProgressSchema, memoryTools } from './memory-contracts'
 import { lifecycleSchema, lifecycleTools } from './lifecycle-contracts'
+import { worldEventPlanSchema } from './world-event-contracts'
 
 const id = z.string().regex(/^[a-zA-Z0-9][a-zA-Z0-9_-]{0,88}$/)
 export const voxelSchema = z.object({ x: z.number().int().nonnegative(), y: z.number().int().nonnegative(), z: z.number().int().nonnegative() }).strict()
@@ -23,10 +24,11 @@ export const organizationSchema = z.object({
   founderId: id, foundedTurn: z.number().int().nonnegative(), locationId: id.nullable(), members: z.array(id)
 }).strict()
 export const lifeEventSchema = z.object({
-  sequence: z.number().int(), turn: z.number().int(), kind: z.enum(['move', 'travel', 'speech', 'facility', 'sleep', 'wake', 'end', 'entry', 'death', 'birth', 'marriage', 'home', 'organization', 'construction']),
-  actorId: id, text: z.string(), recipients: z.array(id), volume: voiceSchema.optional(), locationId: id, position: voxelSchema.nullable()
+  sequence: z.number().int(), turn: z.number().int(), kind: z.enum(['move', 'travel', 'speech', 'facility', 'sleep', 'wake', 'end', 'entry', 'death', 'birth', 'marriage', 'home', 'organization', 'construction', 'world']),
+  actorId: id, text: z.string(), recipients: z.array(id), volume: voiceSchema.optional(), locationId: id.nullable(), position: voxelSchema.nullable(), worldEventId: id.optional()
 })
 export const simulationSchema = z.object({
+  worldEvents: z.array(worldEventPlanSchema).optional(),
   organizations: z.array(organizationSchema).optional(),
   lifecycle: lifecycleSchema.optional(),
   memoryProgress: z.record(z.string(), memoryProgressSchema).optional(),

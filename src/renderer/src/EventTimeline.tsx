@@ -30,6 +30,17 @@ export function EventTimeline({ simulation, runId, historyAvailable, onAgent }: 
   const actor = (id: string) => <button className="event-person" disabled={!names.has(id)} onClick={() => onAgent(id)}>{names.get(id) ?? id}</button>
   return <section className="event-timeline" aria-label="出来事の検索">
     <header><span className="eyebrow">SIMULATION QA</span><h1>出来事をたどる</h1><p>住民の行動と、発話時に誰が受信対象だったかを確認できます。</p></header>
+    <section aria-label="親セッションの世界イベント">
+      <h2>世界イベントと予約</h2>
+      <p className="event-note">この版で新規作成したワールドの親セッションに、突発イベントの発生、日・時間帯を指定した予約、予約の取消を依頼できます。予約は世界内の時計で発生します。対象住民は発生時に確定し、睡眠・活動終了中は次の活動で通知を受け取ります。</p>
+      {!(simulation.worldEvents?.length) && <p>世界イベントの登録はありません。</p>}
+      {(simulation.worldEvents ?? []).toReversed().map(plan => <article key={plan.id} className="event-record event-world">
+        <div className="event-meta"><strong>{plan.status === 'scheduled' ? simulation.stage === 'ended' ? '未発生（世界終了）' : '予約中' : plan.status === 'cancelled' ? '取消済み' : '発生済み'}</strong><span>{plan.scheduledFor ? `${plan.scheduledFor.day}日目・${({ morning: '朝', noon: '昼', evening: '夕', night: '夜' })[plan.scheduledFor.time]}` : `突発 · Turn ${plan.createdTurn}`}</span></div>
+        <h3>{plan.title}</h3><p>{plan.description}</p>
+        <div className="event-place"><span>種類: {plan.type}</span><span>対象: {plan.target.scope === 'world' ? '世界全体' : plan.target.scope === 'location' ? facilities.get(plan.target.locationId) ?? plan.target.locationId : plan.target.actorIds.map(id => names.get(id) ?? id).join('、')}</span></div>
+        <small>{plan.id}{plan.eventSequence !== null && ` · 出来事 #${plan.eventSequence}`}</small>
+      </article>)}
+    </section>
     <div className="event-filters">
       <label>関係する住民<select aria-label="出来事の住民" value={filter.actorId} onChange={e => setFilter({ ...filter, actorId: e.target.value })}><option value="">全住民（行動者・受信対象）</option>{simulation.actors.map(a => <option key={a.id} value={a.id}>{a.name}</option>)}</select></label>
       <label>種類<select aria-label="出来事の種類" value={filter.kind} onChange={e => setFilter({ ...filter, kind: e.target.value as EventFilter['kind'] })}><option value="all">すべての行動</option><option value="unheard">発話（受信対象0人）</option>{Object.entries(eventLabels).map(([kind, label]) => <option key={kind} value={kind}>{label}</option>)}</select></label>
@@ -47,9 +58,9 @@ export function EventTimeline({ simulation, runId, historyAvailable, onAgent }: 
     {events.length === 0 && (!historyMode || history) && <div className="event-empty">{historyMode || simulation.events.length ? '条件に一致する出来事はありません。' : 'まだ出来事はありません。生活が進むとここに表示されます。'}</div>}
     <div className="event-list">{events.map(event => <article key={event.sequence} className={`event-record event-${event.kind}`}>
       <div className="event-meta"><strong>{eventLabels[event.kind]}</strong><span>Turn {event.turn}</span><small>#{event.sequence}</small></div>
-      <div className="event-place">{actor(event.actorId)}<span>{facilities.get(event.locationId) ?? event.locationId}{event.position && ` (${event.position.x}, ${event.position.y}, ${event.position.z})`}</span></div>
+      <div className="event-place">{event.kind === 'world' ? <button className="event-person" onClick={() => onAgent('parent')}>親セッション</button> : actor(event.actorId)}<span>{event.locationId === null ? '場所指定なし' : facilities.get(event.locationId) ?? event.locationId}{event.position && ` (${event.position.x}, ${event.position.y}, ${event.position.z})`}</span></div>
       <p>{event.text}</p>
-      {event.kind === 'speech' && <div className="event-recipients"><span>{event.volume ? ({ low: '小声', medium: '普通の声', high: '大声' })[event.volume] : '発話'} · 受信対象 {event.recipients.length}人</span>{event.recipients.map(id => <span key={id}>{actor(id)}</span>)}</div>}
+      {['speech', 'world'].includes(event.kind) && <div className="event-recipients"><span>{event.volume ? ({ low: '小声', medium: '普通の声', high: '大声' })[event.volume] : event.kind === 'world' ? 'イベント通知' : '発話'} · 受信対象 {event.recipients.length}人</span>{event.recipients.map(id => <span key={id}>{actor(id)}</span>)}</div>}
     </article>)}</div>
   </section>
 }
