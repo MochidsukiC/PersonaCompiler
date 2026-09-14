@@ -1,5 +1,5 @@
 import { test, expect, _electron as electron } from '@playwright/test'
-import { mkdir, mkdtemp, writeFile } from 'node:fs/promises'
+import { mkdir, mkdtemp, readdir, writeFile } from 'node:fs/promises'
 import { createHash } from 'node:crypto'
 import path from 'node:path'
 
@@ -30,7 +30,20 @@ for (const mode of ['demo', 'codex'] as const) test(`${mode}: compares actual pa
     await inspection.locator('summary').filter({ hasText: '別のパッケージとファイルを比較' }).click()
     const comparison = page.getByRole('region', { name: 'パッケージのファイル比較' })
     const select = comparison.getByRole('combobox', { name: 'ファイル比較の基準' })
-    await expect(select.locator('option')).toHaveCount(2)
+    try { await expect(select.locator('option')).toHaveCount(2) }
+    catch (error) {
+      const captures = await Promise.allSettled([
+        page.evaluate(async () => {
+          const snapshot = await window.persona.snapshot()
+          return { root: snapshot.root, runId: snapshot.state.runId, version: snapshot.version, files: snapshot.files, fileVersions: snapshot.fileVersions, error: snapshot.error }
+        }).then(value => test.info().attach('workspace-file-state', { body: JSON.stringify(value, null, 2), contentType: 'application/json' })),
+        select.evaluate(element => Array.from((element as HTMLSelectElement).options, option => ({ value: option.value, text: option.text, selected: option.selected }))).then(value => test.info().attach('comparison-options', { body: JSON.stringify(value, null, 2), contentType: 'application/json' })),
+        readdir(path.join(root, 'compilation'), { recursive: true }).then(value => test.info().attach('compilation-disk-paths', { body: JSON.stringify(value.sort(), null, 2), contentType: 'application/json' })),
+        page.screenshot().then(body => test.info().attach('comparison-failure-screen', { body, contentType: 'image/png' }))
+      ])
+      for (const [index, result] of captures.entries()) if (result.status === 'rejected') test.info().annotations.push({ type: 'diagnostic-capture-failed', description: `capture ${index}: ${String(result.reason)}` })
+      throw error
+    }
     const copy = comparison.getByRole('button', { name: 'ファイル比較レポートをコピー' })
     await expect(copy).toHaveCount(0)
     await select.selectOption('compilation/baseline/npcs/npc0/manifest.json')

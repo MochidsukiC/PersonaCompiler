@@ -47,7 +47,8 @@
 | `471e087` | 大きな成果物を分割読み込みし、ファイル全量の保持による照合時のメモリ増加を削減 | [41](41-package-streaming-hash.md) |
 | `a66ba3f` | 制作レビューに同名の区分があると検索対象外の設定が画面に残る不具合を修正 | [42](42-review-duplicate-sections.md) |
 | `9c4510f` | 読み込み済みの全設定・全根拠・指針・Runtime Promptを元資料のhash付きでコピー | [43](43-full-review-export.md) |
-| `git log --oneline -- improvements/44-current-relation-evidence.md`で確認 | 関係の根拠が更新された後、新しい根拠一覧にない旧記憶が詳細に残る不具合を修正 | [44](44-current-relation-evidence.md) |
+| `fb862fa` | 関係の根拠が更新された後、新しい根拠一覧にない旧記憶が詳細に残る不具合を修正 | [44](44-current-relation-evidence.md) |
+| `git log --oneline -- improvements/45-package-candidate-failure-evidence.md`で確認 | 比較候補の欠落時に、画面・候補・公開ファイル一覧・実ディスクのパスを保存 | [45](45-package-candidate-failure-evidence.md) |
 
 各コミットの直後に差分の自己レビューを実施しました。機能ごとに取り消す場合は、作業ツリーの変更を確認したうえで`git revert <commit>`を使えます。全体を戻す場合は表の下から上の順にrevertしてください。
 
@@ -74,6 +75,8 @@
 - 実行済み検証のログとスクリーンショットは`.local/polish-20260914/`にあります。
 
 ## 検証の結論と残る範囲
+
+[45](45-package-candidate-failure-evidence.md)で、比較候補の件数assertion失敗時に画面と3種の一覧を添付するようにしました。typecheck・lint、正式な比較2件が成功し、意図的な失敗で元のassertionと4種の資料が残ることを確認しました。監視診断の30回では全パスが一致しましたが、前回の候補欠落そのものは再現せず未解決です。初回の診断はmanifest件数だけを待っていたため全パス照合で1回不一致があり、採取条件を修正した経緯も記録しています。アプリ本体の変更はなく、全体検証は再実行していません。
 
 [44](44-current-relation-evidence.md)で、関係の根拠更新後に参照外の旧記憶が詳細に残る不具合を修正しました。ラベルだけの更新では表示を保持し、参照変更時は遅延した旧応答も除外します。build・typecheck・lint、最終の単体71・backend170・通常のElectron全34件の計275件が成功しました。ただし初回E2Eは比較候補の欠落で33件PASS・1件FAILでした。比較単独5回と全体再実行では再現せず、候補欠落の原因は未確定です。初回traceと診断手順をサマリーに残しています。過去のnative異常終了も未解決です。
 
