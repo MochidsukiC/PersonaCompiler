@@ -27,11 +27,14 @@
 | `827d5f4` | Node単体の終了競合を分離再現し、CLIテストへ段階記録を追加 | [21](21-native-node-shutdown.md) |
 | `315e50a` | Compilation入力の外部変更でmanifestへ誤った根拠hashを記録する不具合を修正 | [22](22-compilation-input-provenance.md) |
 | `c9d402e` | 親へ渡す出生・Compilation入力の変更を検出し、不整合な結果の採用を停止 | [23](23-production-input-integrity.md) |
-| `git log --oneline -- improvements/24-package-inspection-report.md`で確認 | 成果物の照合結果を、manifestのhash・照合時刻付きのMarkdownとJSONでコピー | [24](24-package-inspection-report.md) |
+| `8457234` | 成果物の照合結果を、manifestのhash・照合時刻付きのMarkdownとJSONでコピー | [24](24-package-inspection-report.md) |
+| `git log --oneline -- improvements/25-offline-review-demo.md`で確認 | 合成資料でレビュー比較・根拠確認・成果物照合を試せる専用デモコマンド | [25](25-offline-review-demo.md) |
 
 各コミットの直後に差分の自己レビューを実施しました。機能ごとに取り消す場合は、作業ツリーの変更を確認したうえで`git revert <commit>`を使えます。全体を戻す場合は表の下から上の順にrevertしてください。
 
 ## 起床後の確認
+
+最初に`npm run demo:review`で、認証やモデル推論なしの制作レビュー比較を開けます。合成資料とElectronのprofileは実行ごとに`.local/review-demo-*`へ隔離します。詳しい操作は[25](25-offline-review-demo.md)を参照してください。
 
 更新したアプリの起動は`npm run build`、`npm start`です。現在のアプリに未保存のデータがある場合は、アプリ側の保存・終了操作を完了してから起動してください。
 

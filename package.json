@@ -10,6 +10,8 @@
     "dev": "electron-vite dev",
     "start": "electron-vite preview",
     "build": "electron-vite build",
+    "demo:review": "npm run build && node scripts/review-demo.mjs",
+    "test:review-demo": "npm run build && node scripts/review-demo.mjs --check",
     "typecheck": "tsc --noEmit",
     "lint": "eslint . --max-warnings 0",
     "test": "vitest run && vitest run --config vitest.backend.config.ts",

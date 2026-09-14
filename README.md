@@ -20,6 +20,10 @@ npm run build
 npm start
 ```
 
+制作レビューをモデル推論なしで試すには、`npm run demo:review`を実行します。合成の比較資料を作成し、比較画面まで自動で開きます。「両側の根拠を見る」「比較レポートをコピー」を試した後、ファイル一覧の`compilation/current/npcs/sample/manifest.json`で5ファイルの照合とレポートコピーを確認できます。ウィンドウを閉じると終了します。
+
+このデモはゲームへの組み込み前に資料を確認する操作例で、実際のAI生成結果や生活シミュレーションの品質を示すものではありません。認証・Codex CLI・実モデルは使用しません。実行ごとに`.local/review-demo-*`へワールドとElectronのprofileを分けて作り、既存ワールドを読み込まず、再実行でも前の資料を上書きしません。保存先はコンソールに表示します。自動検証は`npm run test:review-demo`です（実クリップボードを書き換え、比較・照合レポートと画面画像を同じデモ用ディレクトリへ保存します）。
+
 `codex.exe` をPATHに置くか、`PERSONA_CODEX_BIN`へ実行ファイルの絶対パスを指定してください。アプリは接続ボタンから専用App Serverを起動し、backendと実CLIの両方が同じConversationへ接続します。App ServerのWebSocketはlocalhost限定で、起動ごとに生成するcapability tokenで認証します。
 
 Windowsのnode-pty 1.2.0-beta.15にはNode-APIの公式バイナリーが同梱されています。複数端末の同時終了で起きるnativeの競合を修正した版に固定しています（[修正理由と検証](improvements/12-native-terminal-exit.md)）。この環境ではElectronから実PTYの起動・出力を確認済みです。ソースからビルドする場合は `npm run rebuild:native` を使用します。Visual Studio C++ Build Toolsと対応するSpectre軽減ライブラリが必要です。現在の環境では後者が不足しており、ソース再ビルドは未成功です。軽減機能を無効にする変更は行っていません。
