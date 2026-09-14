@@ -148,6 +148,47 @@ it('automatically compiles all survivors, preserves successful packages and does
     } finally { await next.close() }
   } finally { if (engine.backendStatus().connection !== 'disconnected') await engine.close() }
 }, 30000)
+it.each(['generation', 'export'] as const)('keeps compilation input provenance when input changes during %s', async phase => {
+  const { root, runtime, engine } = await setup()
+  let changed = false
+  const changeInput = async () => {
+    const task = engine.backendStatus().compilation!.tasks.find(task => task.npcId === 'npc0')!
+    const inputPath = path.join(root, task.input)
+    const input = JSON.parse(await readFile(inputPath, 'utf8'))
+    input.identity.name = '外部変更した名前'
+    await writeFile(inputPath, JSON.stringify(input, null, 2))
+    changed = true
+  }
+  const startTurn = runtime.startTurn.bind(runtime)
+  runtime.startTurn = async (binding, text) => {
+    if (phase === 'generation' && !changed && binding.role === 'parent') await changeInput()
+    return startTurn(binding, text)
+  }
+  const write = engine.workspace.write.bind(engine.workspace)
+  engine.workspace.write = async (relative, content) => {
+    if (phase === 'export' && !changed && relative.endsWith('/npcs/npc0/character.json')) await changeInput()
+    return write(relative, content)
+  }
+  try {
+    await engine.backendCommand({ type: 'connect', authMode: 'chatgpt' }); await completed(engine)
+    const compilation = engine.backendStatus().compilation!
+    const task = compilation.tasks.find(task => task.npcId === 'npc0')!
+    expect(changed).toBe(true)
+    expect(digest(await readFile(path.join(root, task.input)))).not.toBe(task.inputHash)
+    if (phase === 'generation') {
+      expect(task.status).toBe('failed')
+      expect(task.error).toContain('Compilation入力が変更されています')
+      await expect(readFile(path.join(root, task.output, 'manifest.json'))).rejects.toMatchObject({ code: 'ENOENT' })
+      expect(compilation.tasks.filter(task => task.status === 'completed')).toHaveLength(4)
+    } else {
+      expect(task.status).toBe('completed')
+      const manifest = JSON.parse(await readFile(path.join(root, task.output, 'manifest.json'), 'utf8'))
+      expect(manifest.inputHash).toBe(task.inputHash)
+      const character = JSON.parse(await readFile(path.join(root, task.output, 'character.json'), 'utf8'))
+      expect(character.identity.name).toBe('住民0')
+    }
+  } finally { await engine.close() }
+})
 it.each([['paused', false], ['ended', true]] as const)('does not infer for stage=%s, empty=%s', async (stage, empty) => {
   const { runtime, engine } = await setup(stage, empty)
   try {

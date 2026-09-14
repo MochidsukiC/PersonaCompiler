@@ -604,7 +604,8 @@ export class BackendEngine {
           await this.workspace.write(task.input, sourceText); task.inputHash = digest(sourceText); task.status = 'prepared'; await this.persist(); await this.persistence?.flush()
         }
         const sourceText = await this.workspace.read(task.input)
-        if (digest(sourceText) !== task.inputHash) throw new Error(`Compilation入力が変更されています: ${task.npcId}`)
+        const sourceHash = digest(sourceText)
+        if (sourceHash !== task.inputHash) throw new Error(`Compilation入力が変更されています: ${task.npcId}`)
         const source = compilerInputSchema.parse(JSON.parse(sourceText))
         let artifact: unknown
         if (task.status === 'requested') {
@@ -614,6 +615,7 @@ export class BackendEngine {
           task.status = 'requested'; await this.persist(); await this.persistence?.flush()
           artifact = await this.productionService().generate('compile', task.npcId, `${prompt}\nJSON Schema:\n${JSON.stringify(z.toJSONSchema(characterPackageSchema))}`, source)
         }
+        if (digest(await this.workspace.read(task.input)) !== sourceHash) throw new Error(`Compilation入力が変更されています: ${task.npcId}`)
         const result = validateCharacterPackage(source, artifact)
         const review = buildCharacterReview(source, result, compilation.sourceRevision, compilation.modelId)
         const files: Record<string, string> = {
@@ -625,7 +627,7 @@ export class BackendEngine {
           'review.json': JSON.stringify(review, null, 2), 'review.md': characterReviewMarkdown(review)
         }
         for (const [name, text] of Object.entries(files)) await this.workspace.write(`${task.output}/${name}`, text)
-        await this.workspace.write(`${task.output}/manifest.json`, JSON.stringify({ version: 1, npcId: task.npcId, sourceRevision: compilation.sourceRevision, inputHash: digest(await this.workspace.read(task.input)), promptHash: compilation.promptHash, modelId: compilation.modelId, files: Object.fromEntries(Object.entries(files).map(([name, text]) => [name, digest(text)])) }, null, 2))
+        await this.workspace.write(`${task.output}/manifest.json`, JSON.stringify({ version: 1, npcId: task.npcId, sourceRevision: compilation.sourceRevision, inputHash: sourceHash, promptHash: compilation.promptHash, modelId: compilation.modelId, files: Object.fromEntries(Object.entries(files).map(([name, text]) => [name, digest(text)])) }, null, 2))
         task.review = `${task.output}/review.json`
         task.status = 'completed'; await this.persist(); await this.persistence?.flush()
       } catch (error) {
