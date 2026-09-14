@@ -29,6 +29,7 @@ export const characterManifestSchema = z.object({
   files: z.record(z.string().min(1), hash).refine(files => Object.keys(files).length > 0, 'パッケージに成果物がありません')
 }).strict()
 export interface CharacterPackageInspection {
+  runId: string; manifestPath: string; manifestHash: string; inputHash: string; promptHash: string;
   npcId: string; sourceRevision: number; modelId: string; checkedAt: string;
   files: { path: string; status: 'match' | 'changed' | 'missing'; expectedHash: string; actualHash: string | null; bytes: number | null }[]
 }

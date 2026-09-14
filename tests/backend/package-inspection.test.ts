@@ -18,10 +18,10 @@ async function setup() {
 }
 
 it('compares every manifest entry as bytes without changing the package or requiring a game-specific format', async () => {
-  const { workspace, manifestPath } = await setup()
+  const { workspace, manifestPath, manifest } = await setup()
   const original = await workspace.read(manifestPath)
   const report = await inspectCharacterPackage(workspace, manifestPath)
-  expect(report).toMatchObject({ npcId: 'npc0', sourceRevision: 5, modelId: 'fixture' })
+  expect(report).toMatchObject({ runId: workspace.snapshot().state.runId, manifestPath, manifestHash: digest(original), inputHash: manifest.inputHash, promptHash: manifest.promptHash, npcId: 'npc0', sourceRevision: 5, modelId: 'fixture' })
   expect(report.files.map(file => [file.path, file.status, file.bytes])).toEqual([['character.json', 'match', Buffer.byteLength('{"name":"葵"}')], ['nested/asset.bin', 'match', 4]])
   expect(await workspace.read(manifestPath)).toBe(original)
 })

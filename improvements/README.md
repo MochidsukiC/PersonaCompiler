@@ -26,7 +26,8 @@
 | `a94eee2` | RPCの異常受信後に接続が残り、後続処理が動く不具合を修正 | [20](20-rpc-failed-connection.md) |
 | `827d5f4` | Node単体の終了競合を分離再現し、CLIテストへ段階記録を追加 | [21](21-native-node-shutdown.md) |
 | `315e50a` | Compilation入力の外部変更でmanifestへ誤った根拠hashを記録する不具合を修正 | [22](22-compilation-input-provenance.md) |
-| `git log --oneline -- improvements/23-production-input-integrity.md`で確認 | 親へ渡す出生・Compilation入力の変更を検出し、不整合な結果の採用を停止 | [23](23-production-input-integrity.md) |
+| `c9d402e` | 親へ渡す出生・Compilation入力の変更を検出し、不整合な結果の採用を停止 | [23](23-production-input-integrity.md) |
+| `git log --oneline -- improvements/24-package-inspection-report.md`で確認 | 成果物の照合結果を、manifestのhash・照合時刻付きのMarkdownとJSONでコピー | [24](24-package-inspection-report.md) |
 
 各コミットの直後に差分の自己レビューを実施しました。機能ごとに取り消す場合は、作業ツリーの変更を確認したうえで`git revert <commit>`を使えます。全体を戻す場合は表の下から上の順にrevertしてください。
 
@@ -38,6 +39,7 @@
 - 古い出来事は「保存済み履歴を検索」で調べられます。未保存分は対象外です。
 - 「QAレポートをコピー」で表示中の出来事と検索条件をMarkdownへ持ち出せます。保存済み検索はそのページだけを収録します。
 - 生成済みNPCの「成果物を照合」でmanifestと各ファイルの一致・変更・欠損を確認できます。特定のゲーム形式には依存しません。
+- 「照合レポートをコピー」で、照合したmanifestと各ファイルのhash・結果・時刻を制作担当者や実装用agentへ渡せます。貼り付けたMarkdownの末尾にJSONも含まれます。
 - 今回の変更後に生成したCompilationには「制作レビュー」が付きます。既存出力は自動で再生成していません。
 - 同じNPCの制作レビューが2つあれば、「別の出力と比較」で再生成による変更を確認できます。比較そのものにモデル推論は不要です。
 - 「比較レポートをコピー」で変更内容・両側の根拠・参照情報を制作記録へ持ち出せます。
@@ -46,7 +48,7 @@
 
 ## 検証の結論と残る範囲
 
-最終ソースでbuild・typecheck・lint成功、単体53・backend139・CLI/TUI接続8・保存4・Electron E2E18の計222件PASS。最新の終了コードとログは[23](23-production-input-integrity.md)に記載しています。不正なRPCを受信した際の未処理TypeError、異常受信後にも接続と後続処理が残る不具合を修正しました。さらにCompilationのmanifestが実際の生成入力のhashを保持するよう修正し、親へ渡す制作入力コピーの変更も送信前・結果採用前に検出します。
+最終ソースでbuild・typecheck・lint成功、単体55・backend139・CLI/TUI接続8・保存4・Electron E2E19の計225件PASS。最新の終了コードとログは[24](24-package-inspection-report.md)に記載しています。不正なRPC受信と制作入力の外部変更による不具合を修正し、成果物照合結果のコピー機能を追加しました。最新機能はdemo・codex両モードで実クリップボードの内容と画面を検証しています。
 
 別件として[17](17-workspace-dot-prefix.md)のCLI検証では`life-tools.test.ts`のworkerが終了コード`3221226505`で異常終了しました。該当テスト単独と正式CLI検証の再実行は成功していますが、native異常終了は未解決です。今回のRPC形式検証によって解消したとは扱いません。
 

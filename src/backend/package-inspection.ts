@@ -7,7 +7,8 @@ export async function inspectCharacterPackage(workspace: Workspace, manifestPath
   if (!/^compilation\/[^/]+\/npcs\/[^/]+\/manifest\.json$/.test(manifestPath)) throw new Error('NPCパッケージのmanifestを指定してください')
   const directory = path.posix.dirname(manifestPath)
   const packageRoot = await workspace.resolve(directory)
-  const manifest = characterManifestSchema.parse(JSON.parse(await workspace.read(manifestPath)))
+  const manifestBytes = await readFile(await workspace.resolve(manifestPath))
+  const manifest = characterManifestSchema.parse(JSON.parse(manifestBytes.toString('utf8')))
   if (manifest.npcId !== path.posix.basename(directory)) throw new Error('パッケージのNPC IDと保存先が一致しません')
   const files: CharacterPackageInspection['files'] = []
   for (const [name, expectedHash] of Object.entries(manifest.files)) {
@@ -23,5 +24,6 @@ export async function inspectCharacterPackage(workspace: Workspace, manifestPath
       files.push({ path: name, status: 'missing', expectedHash, actualHash: null, bytes: null })
     }
   }
-  return { npcId: manifest.npcId, sourceRevision: manifest.sourceRevision, modelId: manifest.modelId, checkedAt: new Date().toISOString(), files }
+  return { runId: workspace.snapshot().state.runId, manifestPath, manifestHash: digest(manifestBytes), inputHash: manifest.inputHash, promptHash: manifest.promptHash,
+    npcId: manifest.npcId, sourceRevision: manifest.sourceRevision, modelId: manifest.modelId, checkedAt: new Date().toISOString(), files }
 }
