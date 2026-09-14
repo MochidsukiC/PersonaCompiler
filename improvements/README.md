@@ -52,7 +52,8 @@
 | `3747c75` | 同じ施設IDを持つ別ワールドへ切り替えたとき、旧ワールドの施設選択・表示設定を初期化 | [46](46-world-view-run-boundary.md) |
 | `bb9f623` | 比較候補欠落の監視経路を追加診断。正常時の通知記録・調査範囲・未解決事項を保存 | [47](47-workspace-watch-observations.md) |
 | `f338d1d` | ディレクトリ列挙後・監視開始前に作られたファイルが一覧から欠ける競合を修正 | [48](48-watch-before-directory-scan.md) |
-| `git log --oneline -- improvements/49-persistence-test-cleanup.md`で確認 | 保存テストで元のエラーを保持し、復元途中の失敗でも後片付けとアプリ終了を試行 | [49](49-persistence-test-cleanup.md) |
+| `e25ede3` | 保存テストで元のエラーを保持し、復元途中の失敗でも後片付けとアプリ終了を試行 | [49](49-persistence-test-cleanup.md) |
+| `git log --oneline -- improvements/50-directory-replacement-diagnostic.md`で確認 | ファイルを挟んだディレクトリ復元後の一覧欠落を、独立診断で再現・記録（未修正） | [50](50-directory-replacement-diagnostic.md) |
 
 各コミットの直後に差分の自己レビューを実施しました。機能ごとに取り消す場合は、作業ツリーの変更を確認したうえで`git revert <commit>`を使えます。全体を戻す場合は表の下から上の順にrevertしてください。
 
@@ -79,6 +80,8 @@
 - 実行済み検証のログとスクリーンショットは`.local/polish-20260914/`にあります。
 
 ## 検証の結論と残る範囲
+
+[50](50-directory-replacement-diagnostic.md)で、ディレクトリを一時ファイルへ置き換えて元へ戻すと、子ファイルが公開一覧から欠ける別の監視不具合を再現しました。ファイル判定後、書き込み完了待ち中にディレクトリへ変わってもファイル用addのまま通知され、子が監視されていません。typecheck・lintは成功し、独立診断は1件FAIL・1件PASSで実ディスクと通知記録も照合しました。不具合は未修正で、通常検証の成功とは扱いません。48のrename失敗やnative異常終了との同一性は未確認です。修正候補は検証で改善せず、復元をhashで確認しています。
 
 [49](49-persistence-test-cleanup.md)で、保存テストの復元を工程ごとに管理し、元のエラーと後片付けの例外を保持して、復元失敗時も検証用アプリの終了を試みるようにしました。typecheck・lint、通常E2E全34件が成功しました。意図的な障害2件ではエラー保持・復元状態・Electron exit 0を確認しています。アプリ本体は変更していません。48の自然発生した復元失敗は診断10回でも再現せず、原因未確定です。今回の成功で元の失敗やnative異常終了を解消済みとは扱いません。
 
