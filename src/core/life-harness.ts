@@ -86,6 +86,9 @@ export class LifeHarness {
         if (!people.some(n => n.id === a.id && n.householdId === a.householdId)) throw new LifeRuleError(`保存済みNPCが初期人口と一致しません: ${a.id}`)
         if (a.position && !validPosition(this.facility(this.data, a.locationId).dimensions, a.position)) throw new LifeRuleError(`保存済み座標が不正です: ${a.id}`)
       }
+      const organizations = this.data.world.organizations ?? []
+      if (new Set(organizations.map(o => o.id)).size !== organizations.length) throw new LifeRuleError('保存済み組織IDが重複しています')
+      for (const o of organizations) if (!people.some(n => n.id === o.founderId) || o.members.some(id => !people.some(n => n.id === id)) || new Set(o.members).size !== o.members.length || (o.locationId !== null && !this.data.world.facilities.some(f => f.locationId === o.locationId)) || o.foundedTurn > this.data.world.turn) throw new LifeRuleError(`保存済み組織の参照または設立時刻が不正です: ${o.id}`)
       if (!['ready', 'ended'].includes(this.data.world.stage)) this.data.world.stage = 'paused'
     } else {
       const facilities = specification.town.facilities.map(f => ({ id: f.id, locationId: f.locationId, name: f.name, type: f.type, dimensions: f.dimensions!, layout: null }))
@@ -212,6 +215,7 @@ export class LifeHarness {
     const facility = this.facility(d, actor.locationId)
     const residential = d.world.facilities.find(f => f.type === 'residential')!
     return { turn: d.world.turn, day: d.world.day, time: d.world.time, phase: d.world.phase, self: actor,
+      organizations: d.world.organizations ?? [],
       facility, currentRegions: facility.layout?.regions.filter(region => actor.position && contains(region.bounds, actor.position)),
       ...(d.world.lifecycle ? { identity: resident(d.world.lifecycle, id), marriageProposals: d.world.lifecycle.proposals.filter(p => p.actorId === id || p.partnerId === id), homeRequests: d.world.lifecycle.homes.filter(h => h.sponsorId === id || h.members.includes(id)), birthPlans: d.world.lifecycle.births.filter(b => b.parents.includes(id)) } : {}),
       home: residential.layout?.homes.find(h => h.householdId === actor.householdId), homeLocationId: residential.locationId,
@@ -845,6 +849,26 @@ export class LifeHarness {
     if (!(boundaryNotice && ['remember', 'remindMe'].includes(tool)) && (d.world.phase !== 'activity' || actor.activity !== 'active')) throw new LifeRuleError(`現在は行動できません: ${d.world.phase}/${actor.activity}`)
     if (d.world.lifecycle && ['marry', 'createHome', 'consentHome'].includes(tool)) return this.familyTool(d, agentId, tool, input)
     switch (tool) {
+      case 'createOrganization': {
+        const value = lifeToolSchemas.createOrganization.parse(input)
+        if (value.locationId !== null && !d.world.facilities.some(f => f.locationId === value.locationId)) throw new LifeRuleError(`組織の所在地が不明です: ${value.locationId}`)
+        const organization = { ...value, id: unique(), founderId: agentId, foundedTurn: d.world.turn, members: [agentId] }
+        d.world.organizations ??= []
+        d.world.organizations.push(organization)
+        this.event(d, actor, 'organization', `${actor.name}が「${organization.name}」（${organization.type}）を設立しました。目的: ${organization.purpose}`)
+        return reply({ organization })
+      }
+      case 'joinOrganization':
+      case 'leaveOrganization': {
+        const value = lifeToolSchemas[tool].parse(input)
+        const organization = d.world.organizations?.find(o => o.id === value.organizationId)
+        if (!organization) throw new LifeRuleError(`組織が見つかりません: ${value.organizationId}`)
+        const joining = tool === 'joinOrganization', member = organization.members.includes(agentId)
+        if (joining === member) return reply({ organization, changed: false })
+        organization.members = joining ? [...organization.members, agentId] : organization.members.filter(id => id !== agentId)
+        this.event(d, actor, 'organization', `${actor.name}が「${organization.name}」${joining ? 'に参加' : 'から脱退'}しました`)
+        return reply({ organization, changed: true })
+      }
       case 'remember': {
         const result = this.cognition!.remember(agentId, d.world.turn, input)
         this.memoryChanges.push(result.mutation)

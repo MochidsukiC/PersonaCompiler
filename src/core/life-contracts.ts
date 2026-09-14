@@ -16,11 +16,16 @@ export const lifeActorSchema = z.object({
   compact: z.enum(['none', 'pending', 'running', 'complete'])
 })
 export const voiceSchema = z.enum(['low', 'medium', 'high'])
+export const organizationSchema = z.object({
+  id, name: z.string().trim().min(1).max(160), type: z.string().trim().min(1).max(80), purpose: z.string().trim().min(1).max(4000),
+  founderId: id, foundedTurn: z.number().int().nonnegative(), locationId: id.nullable(), members: z.array(id)
+}).strict()
 export const lifeEventSchema = z.object({
-  sequence: z.number().int(), turn: z.number().int(), kind: z.enum(['move', 'travel', 'speech', 'facility', 'sleep', 'wake', 'end', 'entry', 'death', 'birth', 'marriage', 'home']),
+  sequence: z.number().int(), turn: z.number().int(), kind: z.enum(['move', 'travel', 'speech', 'facility', 'sleep', 'wake', 'end', 'entry', 'death', 'birth', 'marriage', 'home', 'organization']),
   actorId: id, text: z.string(), recipients: z.array(id), volume: voiceSchema.optional(), locationId: id, position: voxelSchema.nullable()
 })
 export const simulationSchema = z.object({
+  organizations: z.array(organizationSchema).optional(),
   lifecycle: lifecycleSchema.optional(),
   memoryProgress: z.record(z.string(), memoryProgressSchema).optional(),
   version: z.literal(1), revision: z.number().int().nonnegative(),
@@ -39,6 +44,9 @@ export type SimulationSnapshot = z.infer<typeof simulationSchema>
 
 export const lifeToolSchemas = {
   getSituation: z.object({}).strict(),
+  createOrganization: organizationSchema.pick({ name: true, type: true, purpose: true, locationId: true }),
+  joinOrganization: z.object({ organizationId: id }).strict(),
+  leaveOrganization: z.object({ organizationId: id }).strict(),
   initializeFacility: facilityLayoutSchema,
   setInitialPosition: z.object({ position: voxelSchema }).strict(),
   moveWithinFacility: z.object({ position: voxelSchema }).strict(),
@@ -52,6 +60,9 @@ export const lifeToolSchemas = {
 export type LifeToolName = keyof typeof lifeToolSchemas
 export const lifeToolDescriptions: Record<LifeToolName, string> = {
   getSituation: '現在時刻、自分の位置、施設の座標の意味、同施設内の全NPCの座標・公開状態を取得する。',
+  createOrganization: '会社・ギルド・研究会などの組織を自分の意思で設立する。種別と目的は自由。所在地を持たない組織はlocationId=null。設立者だけが最初の構成員となり、他人を代理で加入させない。',
+  joinOrganization: '公開された組織に自分自身が参加する。組織一覧と構成員はgetSituation.organizationsで確認できる。',
+  leaveOrganization: '組織から自分自身が脱退する。設立者も脱退でき、設立の記録は残る。',
   initializeFacility: '初期化時だけ使用する。承認された施設内の意味付き領域と住宅街の世帯別の家を確定する。boundsのmin/maxは両端を含む整数座標。',
   setInitialPosition: '初期化時または別施設へ入場したターン開始時に、自分の初期座標を選ぶ。',
   moveWithinFacility: '同じ施設内の指定した整数座標へ即時移動する。回数制限なし。家の出入りもこのToolを使う。',
@@ -64,7 +75,7 @@ export const lifeToolDescriptions: Record<LifeToolName, string> = {
 }
 export function lifeTools(role: 'npc' | 'facility', memoryEnabled = false, lifecycleEnabled = false) {
   const names: LifeToolName[] = role === 'npc'
-    ? ['getSituation', 'setInitialPosition', 'moveWithinFacility', 'moveToFacility', 'sendMessage', 'useFacility', 'endTurn', 'sleep']
+    ? ['getSituation', 'createOrganization', 'joinOrganization', 'leaveOrganization', 'setInitialPosition', 'moveWithinFacility', 'moveToFacility', 'sendMessage', 'useFacility', 'endTurn', 'sleep']
     : ['initializeFacility', 'completeFacilityUse']
   return [...names.map(name => ({ type: 'function' as const, name, description: lifeToolDescriptions[name], inputSchema: z.toJSONSchema(lifeToolSchemas[name]) })), ...(role === 'npc' && memoryEnabled ? memoryTools() : []), ...(lifecycleEnabled ? lifecycleTools(role) : [])]
 }

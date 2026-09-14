@@ -94,6 +94,52 @@ async function call(harness: LifeHarness, id: string, tool: string, args: unknow
 }
 
 describe('Residential space', () => {
+  it.each([false, true])('creates genre-independent organizations and persists membership choices (memory=%s)', async memory => {
+    const changes: LifeChange[] = []
+    const services = new Services()
+    if (memory) Object.assign(services, { memory: { initialize: () => undefined, changed: (change: LifeChange) => changes.push(structuredClone(change)) } })
+    const { harness } = await setup(12, undefined, services)
+    await harness.start(true); await active(harness)
+    const request = { turnId: harness.checkpoint().active.npc0.turnId!, callId: 'found', tool: 'createOrganization', arguments: { name: '星見研究会', type: '研究会', purpose: '星図を共同制作する', locationId: null } }
+    const result = await harness.tool('npc0', request)
+    expect(result.success).toBe(true)
+    const organization = harness.snapshot().organizations![0]
+    expect(organization).toMatchObject({ ...request.arguments, founderId: 'npc0', foundedTurn: 1, members: ['npc0'] })
+    expect(await harness.tool('npc0', request)).toEqual(result)
+    expect(harness.snapshot().organizations).toHaveLength(1)
+    expect((await call(harness, 'npc1', 'joinOrganization', { organizationId: organization.id })).success).toBe(true)
+    const eventCount = harness.snapshot().events.length
+    await call(harness, 'npc1', 'joinOrganization', { organizationId: organization.id })
+    expect(harness.snapshot().events).toHaveLength(eventCount)
+    await call(harness, 'npc0', 'leaveOrganization', { organizationId: organization.id })
+    const situation = JSON.parse((await call(harness, 'npc1', 'getSituation')).contentItems[0].text)
+    expect(situation.organizations[0].members).toEqual(['npc1'])
+    await harness.pause(); await harness.drain()
+    const restored = await setup(12, harness.checkpoint())
+    expect(restored.harness.snapshot().organizations).toEqual(harness.snapshot().organizations)
+    if (memory) expect(changes.some(c => c.patches.some(p => JSON.stringify(p.path) === '["world","organizations"]'))).toBe(true)
+    expect(services.errors).toEqual([])
+  })
+
+  it('rejects organization impersonation, unknown locations and actions outside a live NPC turn', async () => {
+    const { harness } = await setup(12)
+    await harness.start(true); await active(harness)
+    const input = { name: '会社', type: '商社', purpose: '商品の交換', locationId: 'home' }
+    for (const invalid of [{ ...input, members: ['npc1'] }, { ...input, founderId: 'npc1' }, { ...input, locationId: 'unknown' }, { ...input, name: '   ' }]) expect((await call(harness, 'npc0', 'createOrganization', invalid)).success).toBe(false)
+    expect((await harness.tool('facility-school', { turnId: 'wrong', callId: 'facility', tool: 'createOrganization', arguments: input })).success).toBe(false)
+    expect((await call(harness, 'npc0', 'joinOrganization', { organizationId: 'missing' })).success).toBe(false)
+    await call(harness, 'npc0', 'endTurn')
+    expect((await call(harness, 'npc0', 'createOrganization', input)).success).toBe(false)
+    expect(harness.snapshot().organizations ?? []).toEqual([])
+  })
+
+  it('rejects corrupted organization references while reading older worlds without organizations', async () => {
+    const { harness } = await setup(12)
+    const old = harness.checkpoint()
+    expect((await setup(12, old)).harness.snapshot().organizations).toBeUndefined()
+    old.world.organizations = [{ id: 'company', name: '会社', type: 'company', purpose: '制作', founderId: 'unknown', foundedTurn: 0, locationId: null, members: [] }]
+    await expect(setup(12, old)).rejects.toThrow('保存済み組織')
+  })
   it('projects departed residents into the destination with unset coordinates', async () => {
     const original = await setup()
     const saved = original.harness.checkpoint()

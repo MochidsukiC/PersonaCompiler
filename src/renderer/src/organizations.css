@@ -1,0 +1,11 @@
+.organizations-panel { flex: 1; min-height: 0; overflow: auto; padding: 22px 24px; color: #ccdcc5; line-height: 1.7; }
+.organizations-panel h1 { font-size: 22px; margin: 8px 0; }
+.organizations-panel h2 { font-size: 17px; margin: 0; }
+.organizations-panel small, .organizations-panel header p { color: #9fb295; font-size: 12px; }
+.organization-card { border: 1px solid #496044; border-radius: 7px; padding: 16px; margin: 15px 0; background: #19271c; overflow-wrap: anywhere; }
+.organization-card p { white-space: pre-wrap; }
+.organization-card dl { display: grid; grid-template-columns: 65px minmax(0, 1fr); gap: 9px; }
+.organization-card dt { color: #9fb295; }
+.organization-card dd { margin: 0; }
+.organization-card button { margin-right: 10px; color: #d1e8bc; border-bottom: 1px dotted #839e6d; }
+.organization-empty { border: 1px dashed #496044; padding: 24px; }

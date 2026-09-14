@@ -307,8 +307,8 @@ export class BackendEngine {
     })
   }
 
-  private npcInstructions(npc: NpcInitialization, spec: import('../core/contracts').Specification, memory = false, lifecycle = false): string {
-    return this.dev?.prompts.npc === undefined ? this.prompts.npc(npc, spec, memory, lifecycle) : this.dev.prompts.npc.replace(/\{\{(townName|birthModelId)\}\}/g, (_, key: string) => key === 'townName' ? spec.town.name : npc.birthModelId)
+  private npcInstructions(npc: NpcInitialization, spec: import('../core/contracts').Specification, memory = false, lifecycle = false, community = true): string {
+    return this.dev?.prompts.npc === undefined ? this.prompts.npc(npc, spec, memory, lifecycle, community) : this.dev.prompts.npc.replace(/\{\{(townName|birthModelId)\}\}/g, (_, key: string) => key === 'townName' ? spec.town.name : npc.birthModelId)
   }
   private facilityInstructions(facility: import('../core/contracts').Specification['town']['facilities'][number], spec: import('../core/contracts').Specification): string {
     return this.dev?.prompts.facility === undefined ? this.prompts.facility(facility, spec) : this.dev.prompts.facility.replace(/\{\{(townName|facilityName)\}\}/g, (_, key: string) => key === 'townName' ? spec.town.name : facility.name)
@@ -320,7 +320,7 @@ export class BackendEngine {
     if (binding.role === 'npc') {
       const npc = this.people().find(n => n.id === binding.agentId)
       if (!npc) throw new Error(`Sessionの住民がありません: ${binding.agentId}`)
-      return this.npcInstructions(npc, spec, binding.memoryVersion === 1, binding.lifecycleVersion === 1)
+      return this.npcInstructions(npc, spec, binding.memoryVersion === 1, binding.lifecycleVersion === 1, binding.communityToolsVersion === 1)
     }
     const facility = spec.town.facilities.find(f => `facility-${f.id}` === binding.agentId)
     if (!facility) throw new Error(`Sessionの施設がありません: ${binding.agentId}`)
@@ -749,6 +749,7 @@ NPCのモデルAutoとeffort Autoは独立しています。effortはsettings.np
     if (this.lifecycleVersion) binding.lifecycleVersion = 1
     if (this.persistence) binding.persistenceVersion = 2
     if (this.lifeVersion && binding.role !== 'parent') binding.lifeToolsVersion = 1
+    if (this.lifeVersion && binding.role === 'npc') binding.communityToolsVersion = 1
     if (this.memoryVersion && binding.role === 'npc') binding.memoryVersion = this.memoryVersion
     const p = this.view.preparation
     if (p.sessions.some(s => s.agentId === binding.agentId)) throw new Error(`Session生成が既に記録されています: ${binding.agentId}`)
@@ -815,7 +816,7 @@ NPCのモデルAutoとeffort Autoは独立しています。effortはsettings.np
       let instructions = binding.role === 'parent' ? this.parentInstructions() : binding.role === 'facility' && this.dev ? this.instructions(binding) : undefined
       if (binding.role === 'npc' && binding.lifeToolsVersion) {
         if (!npc || !p.draft) throw new Error(`NPCの再接続に必要な初期情報と仕様がありません: ${binding.agentId}`)
-        instructions = this.npcInstructions(npc, p.draft.specification, binding.memoryVersion === 1, binding.lifecycleVersion === 1)
+        instructions = this.npcInstructions(npc, p.draft.specification, binding.memoryVersion === 1, binding.lifecycleVersion === 1, binding.communityToolsVersion === 1)
       }
       if (npc && binding.role === 'npc') binding.effort = resolveEffort(requireModel(this.view.models, binding.modelId), this.settings().npc.effort, npc.age).effective
       await this.runtime.resume(binding, instructions)
