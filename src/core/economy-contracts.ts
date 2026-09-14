@@ -10,14 +10,18 @@ export const storageSchema = z.discriminatedUnion('kind', [
   z.object({ kind: z.literal('home'), homeId: id }).strict(),
   z.object({ kind: z.literal('facility'), facilityId: id }).strict()
 ])
-export const itemDefinitionSchema = z.object({
+export const ITEM_DEFINITION_GUIDANCE = 'kind=durableの品物は一次産品でもdurabilityに1〜10000の整数が必須です。nullにはできません。kind=consumableとkind=keepsakeのdurabilityは必ずnullです。例: 耐久100の道具はkind="durable", durability=100、数量で消費する産品はkind="consumable", durability=nullです。'
+const itemDefinitionBase = z.object({
   id, name: z.string().trim().min(1).max(160), description: text,
-  kind: z.enum(['consumable', 'durable', 'keepsake']), cost: money.nullable(),
+  cost: money.nullable(),
   effects: z.object({ hp: z.number().int().min(-100).max(100), hunger: z.number().int().min(-100).max(100), san: z.number().int().min(-100).max(100) }).strict(),
-  durability: quantity.nullable(),
   primary: z.object({ facilityId: id, yield: quantity, toolItemId: id.nullable(), exportPrice: money }).strict().nullable()
-}).strict().superRefine((v, ctx) => {
-  if ((v.kind === 'durable') !== (v.durability !== null)) ctx.addIssue({ code: 'custom', message: '耐久品だけに耐久値が必要です' })
+}).strict()
+export const itemDefinitionSchema = z.discriminatedUnion('kind', [
+  itemDefinitionBase.extend({ kind: z.literal('consumable'), durability: z.null() }),
+  itemDefinitionBase.extend({ kind: z.literal('durable'), durability: z.number({ error: 'kind=durableのdurabilityは1〜10000の整数が必須です。nullにはできません' }).int().positive().max(10000) }),
+  itemDefinitionBase.extend({ kind: z.literal('keepsake'), durability: z.null() })
+]).describe(ITEM_DEFINITION_GUIDANCE).superRefine((v, ctx) => {
   if (v.kind === 'keepsake' && Object.values(v.effects).some(effect => effect !== 0)) ctx.addIssue({ code: 'custom', message: '消耗しない記念品の数値効果は0にしてください' })
   if ((v.primary === null) === (v.cost === null)) ctx.addIssue({ code: 'custom', message: '生成費用と一次産業はどちらか一方を指定してください' })
 })

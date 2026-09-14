@@ -148,6 +148,35 @@ async function review(engine: BackendEngine, runtime: Runtime, configuration = s
 }
 
 describe('Preparation harness', () => {
+  it('rejects an invalid durable seed before initialization and rereads a corrected artifact without regeneration', async () => {
+    const { engine, runtime } = await setup(undefined, true)
+    const corrected: EconomySeed = { ...seed, catalog: [{ item: { ...chicken, kind: 'durable', durability: 100 }, licensees: [personal()] }] }
+    runtime.initialEconomy = structuredClone(corrected)
+    Object.assign(runtime.initialEconomy.catalog[0].item, { durability: null })
+    await review(engine, runtime); await engine.backendCommand({ type: 'approve', revision: 1 })
+    await engine.workspace.write('preparation/work/result.json', JSON.stringify(population))
+    const parent = engine.backendStatus().preparation.sessions.find(s => s.role === 'parent')!
+    runtime.listener({ method: 'turn/completed', params: { threadId: parent.threadId, turn: { id: engine.backendStatus().preparation.operation!.turnId, status: 'completed' } } })
+    await vi.waitFor(() => {
+      expect(engine.backendStatus().preparation.error).toContain('kind=durableのdurabilityは1〜10000の整数が必須')
+      expect(engine.backendStatus().preparation.busy).toBe(false)
+    })
+    const prompt = runtime.inputs.find(text => text.includes('初期資金・アイテム・所持品'))!
+    const output = 'preparation/work/' + prompt.match(/出力先: (production\/[a-f0-9-]+\/result.json)/)![1]
+    expect(engine.backendStatus().preparation.error).toContain(output)
+    expect(prompt).toContain('一次産品でもdurability')
+    expect(runtime.created).toEqual(['parent'])
+    expect(engine.backendStatus().simulation).toBeUndefined()
+    const count = runtime.inputs.length
+    await expect(engine.backendCommand({ type: 'retry' })).rejects.toThrow('初期経済の成果物が不正')
+    expect(runtime.inputs).toHaveLength(count)
+    await engine.workspace.write(output, JSON.stringify(corrected))
+    await engine.backendCommand({ type: 'retry' })
+    await vi.waitFor(() => expect(engine.backendStatus().simulation?.stage).toBe('ready'), { timeout: 10000 })
+    expect(engine.backendStatus().simulation!.economy!.catalog[0].item.durability).toBe(100)
+    expect(runtime.inputs.filter(text => text.includes('初期資金・アイテム・所持品'))).toHaveLength(1)
+  })
+
   it('queues item approval behind the parent conversation while NPCs finish and restores economy bindings', async () => {
     const { engine, runtime, root } = await setup(undefined, true)
     await review(engine, runtime); await engine.backendCommand({ type: 'approve', revision: 1 }); await complete(engine, runtime, population)

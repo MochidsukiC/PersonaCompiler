@@ -1,9 +1,10 @@
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { mkdir, mkdtemp } from 'node:fs/promises'
 import path from 'node:path'
+import { z } from 'zod'
 import { LifeHarness, lifeCheckpointSchema, type LifeServices } from '../../src/core/life-harness'
 import { applyEconomyTool, economyInventory, economySituation, inheritEconomy, tickEconomy, validateEconomy, validateEconomySeed } from '../../src/core/economy'
-import { ItemDecisionUncertainError, itemDecisionSchema, type ItemDefinition } from '../../src/core/economy-contracts'
+import { ItemDecisionUncertainError, economySeedSchema, itemDefinitionSchema, itemDecisionSchema, type ItemDefinition } from '../../src/core/economy-contracts'
 import { lifeTransaction } from '../../src/core/life-transaction'
 import { PersistenceStore } from '../../src/backend/persistence-store'
 import { emptyPreparation } from '../../src/core/contracts'
@@ -28,6 +29,23 @@ async function companyFixture() {
   return { ...context, organizationId, owner }
 }
 describe('会社と暮らしの経済', () => {
+  it('requires durability for durable primary goods in validation and the schema sent to the parent', () => {
+    const wood = { ...wheat, id: 'wood', name: '木製部材', kind: 'durable', durability: null }
+    const input = { ...seed, catalog: [{ item: wood, licensees: [personal()] }] }
+    expect(economySeedSchema.safeParse(input).success).toBe(false)
+    expect(itemDecisionSchema.safeParse({ decision: 'approved', reason: '登録', item: wood }).success).toBe(false)
+    for (const durability of [1, 10000]) expect(itemDefinitionSchema.parse({ ...wood, durability }).durability).toBe(durability)
+    for (const durability of [0, -1, 1.5, 10001]) expect(itemDefinitionSchema.safeParse({ ...wood, durability }).success).toBe(false)
+    for (const kind of ['consumable', 'keepsake']) {
+      const item = { ...chicken, kind, effects: { hp: 0, hunger: 0, san: 0 } }
+      expect(itemDefinitionSchema.safeParse(item).success).toBe(true)
+      expect(itemDefinitionSchema.safeParse({ ...item, durability: 100 }).success).toBe(false)
+    }
+    const variants: { properties: { kind: { const: string }; durability: { type: string } } }[] = JSON.parse(JSON.stringify(z.toJSONSchema(economySeedSchema))).properties.catalog.items.properties.item.oneOf
+    expect(variants.find(v => v.properties.kind.const === 'durable')!.properties.durability).toMatchObject({ type: 'integer', exclusiveMinimum: 0, maximum: 10000 })
+    expect(variants.filter(v => v.properties.kind.const !== 'durable').map(v => v.properties.durability.type)).toEqual(['null', 'null'])
+  })
+
   it('validates initial references before accepting a parent seed and protects carried reservations', async () => {
     expect(() => validateEconomySeed({ ...seed, catalog: [{ item: chicken, licensees: [personal('missing')] }] }, population.npcs.map(n => n.id), ['office'])).toThrow('初期取得権')
     expect(() => validateEconomySeed({ ...seed, catalog: [{ item: wheat, licensees: [personal()] }] }, population.npcs.map(n => n.id), [])).toThrow('施設・道具')

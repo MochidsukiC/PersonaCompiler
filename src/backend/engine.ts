@@ -3,7 +3,7 @@ import { DevStore, type DevCheckpoint } from './dev-store'
 import { MEMORY_MATCHER_PROMPT } from './memory-matcher'
 import { MEMORY_CONSOLIDATION_PROMPT } from '../core/memory-contracts'
 import { validateEconomySeed } from '../core/economy'
-import { ECONOMY_NPC_PROMPT, ItemDecisionUncertainError, economySeedSchema, itemDecisionSchema, type EconomySeed, type ItemRequest } from '../core/economy-contracts'
+import { ECONOMY_NPC_PROMPT, ITEM_DEFINITION_GUIDANCE, ItemDecisionUncertainError, economySeedSchema, itemDecisionSchema, type EconomySeed, type ItemRequest } from '../core/economy-contracts'
 import { ParentProduction } from './production'
 import { ConversationCache } from './conversation-cache'
 import { readEventHistory } from './event-history'
@@ -841,7 +841,13 @@ NPCのモデルAutoとeffort Autoは独立しています。effortはsettings.np
     if (this.economyVersion && !this.economySeed) {
       if (this.production?.kind === 'economySeed' && ['requested', 'running', 'uncertain'].includes(this.production.status)) throw new Error('初期経済生成の結果が未確定です。自動再送しません')
       const result = this.production?.kind === 'economySeed' && this.production.status === 'completed' ? JSON.parse(await this.workspace.read(this.production.output)) : await this.productionService().generate('economySeed', 'initial-economy', '初期資金・アイテム・所持品を生成してください。全NPCへ重複なく資金を配分し、食料、回復・娯楽品、一次産品と必要な道具を世界設定に合わせて登録してください。取得権は既存NPCに割り当てます。会社はNPCが生活中に設立します。kind=durableだけ耐久値を指定、他はnull。kind=keepsakeは全数値効果を0にしてください。一次産品はcost=nullとprimary、他の品物はcostとprimary=null。primaryのtoolItemIdは登録する耐久品またはnull。経験・愛着・非家族関係は捏造しません。Schema: ' + JSON.stringify(z.toJSONSchema(economySeedSchema)), { specification: draft.specification, population: p.population })
-      this.economySeed = validateEconomySeed(result, p.population.npcs.map(n => n.id), draft.specification.town.facilities.map(f => f.id)); await this.persist()
+      try {
+        this.economySeed = validateEconomySeed(result, p.population.npcs.map(n => n.id), draft.specification.town.facilities.map(f => f.id))
+      } catch (error) {
+        if (!(error instanceof z.ZodError)) throw error
+        throw new Error(`初期経済の成果物が不正です: ${this.production!.output}。${ITEM_DEFINITION_GUIDANCE}\n${error.message}\n成果物を訂正してから「保存済みの状態から再開」を実行してください。自動再生成は行いません`, { cause: error })
+      }
+      await this.persist()
     }
     for (const npc of p.population.npcs) {
       if (this.stopRequested) { p.paused = true; p.busy = false; await this.persist(); return }
