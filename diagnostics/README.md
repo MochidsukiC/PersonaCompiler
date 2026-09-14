@@ -62,6 +62,28 @@ Get-Content .local/native-diagnostics/e2e.log
 
 ## 処理段階とNode自体の終了競合
 
+### Backend workerのテスト段階
+
+通常のbackend設定を引き継ぎ、worker PID・テストファイル・テスト名・UTC時刻を同期記録する任意の診断設定です。リポジトリルートで実行します。
+
+```powershell
+node node_modules/vitest/vitest.mjs run --config vitest.backend-stages.config.ts
+# RPCだけを調べる場合
+node node_modules/vitest/vitest.mjs run --config vitest.backend-stages.config.ts tests/backend/rpc.test.ts
+```
+
+出力先は毎回新しい`.local/backend-stages-*`で、起動時に絶対パスを表示します。各setup実行につき`<PID>-<UUID>.jsonl`を作り、`setup`・`beforeAll`・`beforeEach`・`afterEach`・`afterAll`のhook到達時に追記します。ファイル内の`sequence`は1から連続します。テスト情報をまだ取得できない段階は`null`です。テスト名・パス以外の引数、環境変数一覧、テストの出力や認証情報は記録しません。テスト名自体に秘密情報を含めないでください。
+
+`afterEach`は失敗時にも呼ばれます。段階記録は成功判定ではなく、Vitestの結果・終了コードと併せて読みます。突然のworker終了では終了直前のテスト名を確認できますが、同時進行するnative処理の原因までは特定できません。`setup`より前の異常終了では記録を作れず、`afterAll`もプロセス終了完了を意味しません。通常の`npm test`には組み込まず、テスト対象・並列数・制限時間も変更しません。同期書き込みは実行タイミングに影響します。
+
+既存のnative診断と組み合わせる場合も、対象configだけを置き換えます。PIDで段階記録とnativeログを対応付けられます。
+
+```powershell
+& $diagnosticExe --timeout-ms 180000 .local/native-diagnostics/backend-stages.log .local/native-diagnostics $nodeExe node_modules/vitest/vitest.mjs run --config vitest.backend-stages.config.ts
+```
+
+### CLIの処理段階とNode終了競合
+
 `life-tools.test.ts`は、fixtureの`stages.jsonl`へUTC時刻・worker PID・処理名を同期追記します。再接続・再開・Tool完了待ち・最終assertion・レポート保存・各リソース終了のbegin/endを確認できます。実行中の異常終了では、endがない処理名が停止区間を絞る手がかりです。非同期native処理は同時進行するため、その処理が原因だと断定する記録ではありません。記録自体もタイミングに影響します。
 
 `node-fetch-exit-probe.mjs`は、[Node issue #56645](https://github.com/nodejs/node/issues/56645)と[修正PR #61999](https://github.com/nodejs/node/pull/61999)の条件をlocalhostだけで試す比較用fixtureです。ローカルのリダイレクト上限到達後、意図的に`process.exit(0)`を呼びます。通常のアプリ起動・テストゲートには組み込んでいません。
