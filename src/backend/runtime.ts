@@ -125,11 +125,18 @@ export class CodexRuntime implements AgentRuntime {
     for (let i = 0; i < 100; i++) {
       if (startupError) throw startupError
       if (child.exitCode !== null) throw new Error(`Codex App Serverの起動に失敗しました: code=${child.exitCode}`)
-      try { ready = (await fetch(`http://127.0.0.1:${address.port}/readyz`, { signal: AbortSignal.timeout(1000) })).ok }
+      let response: Response
+      try {
+        response = await fetch(`http://127.0.0.1:${address.port}/readyz`, { signal: AbortSignal.timeout(1000) })
+      }
       catch (error) {
         const refused = error instanceof TypeError && error.cause instanceof Error && 'code' in error.cause && error.cause.code === 'ECONNREFUSED'
         if (!refused) throw error
+        await delay(100)
+        continue
       }
+      await response.body?.cancel()
+      ready = response.ok
       if (ready) break
       await delay(100)
     }

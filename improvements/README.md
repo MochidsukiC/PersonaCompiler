@@ -31,7 +31,8 @@
 | `bf60780` | 合成資料でレビュー比較・根拠確認・成果物照合を試せる専用デモコマンド | [25](25-offline-review-demo.md) |
 | `797a84f` | プレビュー失敗後、同じファイルの再選択や専用ボタンから再試行できるよう修正 | [26](26-preview-retry.md) |
 | `91b7556` | 根拠資料の本文・題名・IDから、その資料を参照するNPC設定を逆引き | [27](27-review-evidence-search.md) |
-| `git log --oneline -- improvements/28-dev-checkpoint-test-wait.md`で確認 | DEV検証が保存前のチェックポイントを取得して失敗する競合を修正 | [28](28-dev-checkpoint-test-wait.md) |
+| `90ae325` | DEV検証が保存前のチェックポイントを取得して失敗する競合を修正 | [28](28-dev-checkpoint-test-wait.md) |
+| `git log --oneline -- improvements/29-readiness-response-cleanup.md`で確認 | App Server起動確認のHTTP応答本文を解放し、キャンセル失敗を明示 | [29](29-readiness-response-cleanup.md) |
 
 各コミットの直後に差分の自己レビューを実施しました。機能ごとに取り消す場合は、作業ツリーの変更を確認したうえで`git revert <commit>`を使えます。全体を戻す場合は表の下から上の順にrevertしてください。
 
@@ -56,7 +57,7 @@
 
 ## 検証の結論と残る範囲
 
-最新の根拠検索追加でbuild・typecheck・lint成功、単体55・backend139・Electron E2E23の計217件PASS。終了コード・対象範囲とログは[27](27-review-evidence-search.md)に記載しています。CLI/TUI接続8・保存単独4件の直近の実行証拠は[24](24-package-inspection-report.md)で、今回変更していない範囲の単独検証は繰り返していません。[25](25-offline-review-demo.md)では専用デモの比較・照合・実クリップボード、通常表示と終了も検証しました。
+最新のHTTP本文解放修正でbuild・typecheck・lint成功、単体55・backend143・CLI/TUI接続8・保存4・Electron E2E23の計233件PASS。終了コード・対象範囲とログは[29](29-readiness-response-cleanup.md)に記載しています。途中で見つかったDEV検証の保存完了待ちの競合も[28](28-dev-checkpoint-test-wait.md)で修正済みです。[25](25-offline-review-demo.md)では専用デモの比較・照合・実クリップボード、通常表示と終了も検証しました。
 
 別件として[17](17-workspace-dot-prefix.md)のCLI検証では`life-tools.test.ts`のworkerが終了コード`3221226505`で異常終了しました。該当テスト単独と正式CLI検証の再実行は成功していますが、native異常終了は未解決です。今回のRPC形式検証によって解消したとは扱いません。
 
