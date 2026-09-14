@@ -36,7 +36,8 @@
 | `0d329d5` | 端末切断で返答不明になったCLI要求について、終了時の30秒待ちを即時エラーへ変更 | [30](30-relay-disconnected-ack.md) |
 | `cf6db43` | 制作レビューで同じ根拠を再選択したときも、資料の位置へ移動するよう修正 | [31](31-review-evidence-navigation.md) |
 | `58c1bc7` | 検索した設定と全根拠を、検索条件・元資料のhash付きでMarkdownとJSONへコピー | [32](32-review-search-report.md) |
-| `git log --oneline -- improvements/33-rpc-response-validation.md`で確認 | 結果のない不正なRPC応答で要求が完了扱いになる不具合を修正 | [33](33-rpc-response-validation.md) |
+| `978500d` | 結果のない不正なRPC応答で要求が完了扱いになる不具合を修正 | [33](33-rpc-response-validation.md) |
+| `git log --oneline -- improvements/34-native-diagnostic-deadline.md`で確認 | 全画面検証を追跡できるようnative診断の期限を明示指定可能に変更 | [34](34-native-diagnostic-deadline.md) |
 
 各コミットの直後に差分の自己レビューを実施しました。機能ごとに取り消す場合は、作業ツリーの変更を確認したうえで`git revert <commit>`を使えます。全体を戻す場合は表の下から上の順にrevertしてください。
 
@@ -63,6 +64,8 @@
 ## 検証の結論と残る範囲
 
 最新のRPC応答検証修正でbuild・typecheck・lint成功、単体61・backend154・CLI/TUI接続8・保存4・Electron E2E27の計254件PASSを確認しました。ただし初回のE2EではPlaywright workerが`3221226505`で異常終了し、26件PASS・1件FAILでした。直前と該当の4件はnative診断配下で成功、通常の全体再実行も成功しましたが、この異常終了は未解決です。終了コード・対象範囲とログは[33](33-rpc-response-validation.md)に記載しています。途中で見つかったDEV検証の保存完了待ちの競合は[28](28-dev-checkpoint-test-wait.md)で修正済みです。[25](25-offline-review-demo.md)では専用デモの比較・照合・実クリップボード、通常表示と終了も検証しました。
+
+[34](34-native-diagnostic-deadline.md)で診断期限を明示指定できるようにし、全27件の画面検証をnative診断配下でも最後まで実行しました。3.7分で全件PASS・例外採取0・期限超過0でした。これは診断手段の拡張と検証記録であり、異常終了を解消したという変更ではありません。
 
 別件として[17](17-workspace-dot-prefix.md)のCLI検証では`life-tools.test.ts`のworkerが終了コード`3221226505`で異常終了しました。該当テスト単独と正式CLI検証の再実行は成功していますが、native異常終了は未解決です。今回のRPC形式検証によって解消したとは扱いません。
 

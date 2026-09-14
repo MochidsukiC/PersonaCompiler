@@ -46,7 +46,17 @@ Get-Content .local/native-diagnostics/life-tools.log.stdout.log
 
 ログにはプロセスの実行ファイル名・PID・終了コード、例外コード・引数・stackを記録します。引数や環境変数の一覧は出力しません。標準出力と標準エラーは`.stdout.log`へまとめます。dumpはローカルの`.local/`に保存し、Gitへ追加・外部送信しません。dumpには対象プロセスのメモリ内容が含まれるため、実ユーザーデータや認証情報を持たないfixtureを対象にしてください。
 
-終了コードは、通常完了0、native例外検出または対象プログラムの失敗1、起動・イベント待受処理の失敗2、180秒の診断期限超過124です。例外検出後のcontext・dump・symbol採取の失敗はログに個別に記録するため、終了コードだけで採取成功とは判断しないでください。期限超過時は、この診断で起動・追跡しているプロセスだけを終了します。通常のテスト設定・タイムアウトは変更しません。
+終了コードは、通常完了0、native例外検出または対象プログラムの失敗1、引数・起動・イベント待受処理の失敗2、診断期限超過124です。診断期限の既定値は180秒です。例外検出後のcontext・dump・symbol採取の失敗はログに個別に記録するため、終了コードだけで採取成功とは判断しないでください。期限超過時は、この診断で起動・追跡しているプロセスだけを終了します。期限超過後に作成通知が届いた子プロセスも終了対象です。通常のテスト設定・タイムアウトは変更しません。
+
+約3分かかる全体E2Eなどでは、先頭に`--timeout-ms`と期限を指定できます。値は1〜900000ミリ秒の整数です。不正値は対象プログラムを起動せずexit 2で拒否します。選択した期限は診断ログの先頭に記録します。
+
+```powershell
+# 先にnpm run buildを完了させ、同じビルドで全体E2Eを追跡する例
+& $diagnosticExe --timeout-ms 600000 .local/native-diagnostics/e2e.log .local/native-diagnostics $nodeExe node_modules/@playwright/test/cli.js test
+$LASTEXITCODE
+Get-Content .local/native-diagnostics/e2e.log.stdout.log
+Get-Content .local/native-diagnostics/e2e.log
+```
 
 デバッガーはタイミングを変えるため、再発しなかったことは修正の証明になりません。シンボルがないモジュールは名前とオフセットまでの記録になり、関数名を保証しません。アプリ固有の意図的なbreakpointを検証する用途は対象外です。
 

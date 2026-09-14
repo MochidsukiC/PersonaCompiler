@@ -53,25 +53,37 @@ __declspec(noinline) static void failFixture() { __fastfail(7); }
 
 int wmain(int argc, wchar_t** argv) {
   if (argc == 2 && std::wstring(argv[1]) == L"--fixture-crash") { failFixture(); return 99; }
-  if (argc < 4) return 2;
-  FILE* log = nullptr; if (_wfopen_s(&log, argv[1], L"w, ccs=UTF-8") || !log) return 2;
+  int first = 1; ULONGLONG timeoutMs = 180000;
+  if (argc > 1 && std::wstring(argv[1]) == L"--timeout-ms") {
+    timeoutMs = 0;
+    if (argc > 2) for (auto p = argv[2]; *p; ++p) {
+      if (*p < L'0' || *p > L'9') { timeoutMs = 0; break; }
+      timeoutMs = timeoutMs * 10 + (*p - L'0');
+      if (timeoutMs > 900000) { timeoutMs = 0; break; }
+    }
+    if (!timeoutMs) { fwprintf(stderr, L"--timeout-ms must be an integer from 1 to 900000\n"); return 2; }
+    first = 3;
+  }
+  if (argc - first < 3) return 2;
+  FILE* log = nullptr; if (_wfopen_s(&log, argv[first], L"w, ccs=UTF-8") || !log) return 2;
+  fwprintf(log, L"diagnostic-timeout-ms=%llu\n", timeoutMs);
   std::wstring command;
-  for (int i = 3; i < argc; ++i) { if (i > 3) command += L' '; command += quote(argv[i]); }
+  for (int i = first + 2; i < argc; ++i) { if (i > first + 2) command += L' '; command += quote(argv[i]); }
   STARTUPINFOW startup{}; startup.cb = sizeof(startup);
   SECURITY_ATTRIBUTES security{sizeof(security), nullptr, TRUE};
-  const auto outputName = std::wstring(argv[1]) + L".stdout.log";
+  const auto outputName = std::wstring(argv[first]) + L".stdout.log";
   HANDLE output = CreateFileW(outputName.c_str(), GENERIC_WRITE, FILE_SHARE_READ, &security, CREATE_ALWAYS, FILE_ATTRIBUTE_NORMAL, nullptr);
   HANDLE input = CreateFileW(L"NUL", GENERIC_READ, FILE_SHARE_READ | FILE_SHARE_WRITE, &security, OPEN_EXISTING, 0, nullptr);
   if (output == INVALID_HANDLE_VALUE || input == INVALID_HANDLE_VALUE) { fwprintf(log, L"stdio-error=%lu\n", GetLastError()); fclose(log); return 2; }
   startup.dwFlags = STARTF_USESTDHANDLES; startup.hStdOutput = output; startup.hStdError = output; startup.hStdInput = input;
   PROCESS_INFORMATION pi{};
-  if (!CreateProcessW(argv[3], command.data(), nullptr, nullptr, TRUE, DEBUG_PROCESS | CREATE_NO_WINDOW, nullptr, nullptr, &startup, &pi)) { fwprintf(log, L"launch-error=%lu\n", GetLastError()); fclose(log); return 2; }
+  if (!CreateProcessW(argv[first + 2], command.data(), nullptr, nullptr, TRUE, DEBUG_PROCESS | CREATE_NO_WINDOW, nullptr, nullptr, &startup, &pi)) { fwprintf(log, L"launch-error=%lu\n", GetLastError()); fclose(log); return 2; }
   CloseHandle(input); CloseHandle(output);
   const DWORD root = pi.dwProcessId; CloseHandle(pi.hThread); CloseHandle(pi.hProcess);
   std::unordered_map<DWORD, HANDLE> processes, threads;
   const auto started = GetTickCount64(); bool timedOut = false, captured = false; DWORD rootExit = 0;
   for (;;) {
-    if (!timedOut && GetTickCount64() - started > 180000) {
+    if (!timedOut && GetTickCount64() - started > timeoutMs) {
       timedOut = true; fwprintf(log, L"diagnostic-timeout\n"); fflush(log);
       for (const auto& entry : processes) TerminateProcess(entry.second, 124);
     }
@@ -84,6 +96,7 @@ int wmain(int argc, wchar_t** argv) {
     switch (event.dwDebugEventCode) {
       case CREATE_PROCESS_DEBUG_EVENT: {
         processes[event.dwProcessId] = event.u.CreateProcessInfo.hProcess; threads[event.dwThreadId] = event.u.CreateProcessInfo.hThread;
+        if (timedOut) TerminateProcess(event.u.CreateProcessInfo.hProcess, 124);
         wchar_t image[32768]; DWORD size = 32768;
         if (QueryFullProcessImageNameW(event.u.CreateProcessInfo.hProcess, 0, image, &size)) fwprintf(log, L"process pid=%lu image=%ls\n", event.dwProcessId, image);
         if (event.u.CreateProcessInfo.hFile) CloseHandle(event.u.CreateProcessInfo.hFile); break;
@@ -95,7 +108,7 @@ int wmain(int argc, wchar_t** argv) {
         const auto code = event.u.Exception.ExceptionRecord.ExceptionCode;
         if (code != EXCEPTION_BREAKPOINT && code != 0x4000001F) {
           status = DBG_EXCEPTION_NOT_HANDLED;
-          if (!event.u.Exception.dwFirstChance || code == 0xC0000409) { capture(log, argv[2], event, processes.at(event.dwProcessId), threads.at(event.dwThreadId)); captured = true; }
+          if (!event.u.Exception.dwFirstChance || code == 0xC0000409) { capture(log, argv[first + 1], event, processes.at(event.dwProcessId), threads.at(event.dwThreadId)); captured = true; }
         }
         break;
       }
