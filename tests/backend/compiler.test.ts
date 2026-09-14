@@ -222,6 +222,36 @@ it('rejects terminal reconnection for ended-world NPCs while keeping parent prod
     expect(attached).toEqual(['parent'])
   } finally { await engine.close() }
 })
+it.each((['birth', 'compile'] as const).flatMap(kind => (['before', 'during'] as const).map(phase => ({ kind, phase }))))('rejects changed parent $kind inputs $phase generation, then permits the next operation', async ({ kind, phase: initialPhase }) => {
+  const { runtime, engine } = await setup()
+  const binding = engine.backendStatus().preparation.sessions.find(session => session.role === 'parent')!
+  const operations: ProductionOperation[] = []
+  let phase: 'before' | 'during' | 'unchanged' = initialPhase
+  let sends = 0
+  const producer = new ParentProduction(runtime, engine.workspace, () => binding, async () => undefined, async operation => {
+    operations.push(structuredClone(operation))
+    if (phase === 'before' && operation.status === 'requested') await engine.workspace.write(`${path.posix.dirname(operation.output)}/input.json`, JSON.stringify({ marker: 'changed-before-send' }))
+  })
+  runtime.startTurn = async (parent, text) => {
+    sends++
+    const relative = text.match(/入力資料: (production\/[a-f0-9-]+\/input.json)/)![1]
+    if (phase === 'during') await writeFile(path.join(parent.cwd, relative), JSON.stringify({ marker: 'changed-during-generation' }))
+    await writeFile(path.join(parent.cwd, relative.replace('input.json', 'result.json')), JSON.stringify({ marker: 'fixture-output' }))
+    const id = crypto.randomUUID()
+    runtime.emit({ method: 'turn/completed', params: { threadId: parent.threadId, turn: { id, status: 'completed' } } })
+    return id
+  }
+  try {
+    await expect(producer.generate(kind, 'target', 'fixture', { marker: 'original' })).rejects.toThrow('制作入力が変更されています')
+    expect(sends).toBe(initialPhase === 'before' ? 0 : 1)
+    expect(operations.at(-1)).toMatchObject({ kind, targetId: 'target', status: 'failed', turnId: initialPhase === 'before' ? null : expect.any(String) })
+    expect(operations.filter(operation => operation.status === 'completed')).toHaveLength(0)
+    phase = 'unchanged'
+    expect(await producer.generate(kind, 'next', 'fixture', { marker: 'original' })).toEqual({ marker: 'fixture-output' })
+    expect(sends).toBe(initialPhase === 'before' ? 1 : 2)
+    expect(operations.at(-1)).toMatchObject({ targetId: 'next', status: 'completed', error: null })
+  } finally { await engine.close() }
+})
 it('records a lost parent response without automatically sending it again', async () => {
   const { runtime, engine } = await setup()
   try {

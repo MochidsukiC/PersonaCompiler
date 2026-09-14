@@ -25,7 +25,8 @@
 | `b68953d` | 不正なRPC受信による端末中継の未処理例外を修正 | [19](19-terminal-rpc-envelope.md) |
 | `a94eee2` | RPCの異常受信後に接続が残り、後続処理が動く不具合を修正 | [20](20-rpc-failed-connection.md) |
 | `827d5f4` | Node単体の終了競合を分離再現し、CLIテストへ段階記録を追加 | [21](21-native-node-shutdown.md) |
-| `git log --oneline -- improvements/22-compilation-input-provenance.md`で確認 | Compilation入力の外部変更でmanifestへ誤った根拠hashを記録する不具合を修正 | [22](22-compilation-input-provenance.md) |
+| `315e50a` | Compilation入力の外部変更でmanifestへ誤った根拠hashを記録する不具合を修正 | [22](22-compilation-input-provenance.md) |
+| `git log --oneline -- improvements/23-production-input-integrity.md`で確認 | 親へ渡す出生・Compilation入力の変更を検出し、不整合な結果の採用を停止 | [23](23-production-input-integrity.md) |
 
 各コミットの直後に差分の自己レビューを実施しました。機能ごとに取り消す場合は、作業ツリーの変更を確認したうえで`git revert <commit>`を使えます。全体を戻す場合は表の下から上の順にrevertしてください。
 
@@ -45,7 +46,7 @@
 
 ## 検証の結論と残る範囲
 
-最終ソースでbuild・typecheck・lint成功、単体53・backend135・CLI/TUI接続8・保存4・Electron E2E18の計218件PASS。最新の終了コードとログは[22](22-compilation-input-provenance.md)に記載しています。不正なRPCを受信した際の未処理TypeError、異常受信後にも接続と後続処理が残る不具合を修正しました。さらにCompilation入力の外部変更時にも、manifestが実際の生成入力のhashを保持するよう修正しています。
+最終ソースでbuild・typecheck・lint成功、単体53・backend139・CLI/TUI接続8・保存4・Electron E2E18の計222件PASS。最新の終了コードとログは[23](23-production-input-integrity.md)に記載しています。不正なRPCを受信した際の未処理TypeError、異常受信後にも接続と後続処理が残る不具合を修正しました。さらにCompilationのmanifestが実際の生成入力のhashを保持するよう修正し、親へ渡す制作入力コピーの変更も送信前・結果採用前に検出します。
 
 別件として[17](17-workspace-dot-prefix.md)のCLI検証では`life-tools.test.ts`のworkerが終了コード`3221226505`で異常終了しました。該当テスト単独と正式CLI検証の再実行は成功していますが、native異常終了は未解決です。今回のRPC形式検証によって解消したとは扱いません。
 
