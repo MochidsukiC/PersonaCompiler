@@ -650,6 +650,7 @@ describe('Autonomous life harness', () => {
     const turnId = harness.checkpoint().active.npc0.turnId!
     const interrupted: string[] = []
     const interrupt = vi.spyOn(services, 'interrupt').mockImplementation(async (id, turn) => {
+      expect(harness.checkpoint().jobs.filter(j => j.turnId === turnId).every(j => j.status === 'done' && j.completed)).toBe(true)
       interrupted.push(id)
       services.finish(id, turn, 'interrupted')
       throw new Error('interrupt acknowledgement lost')
@@ -658,7 +659,7 @@ describe('Autonomous life harness', () => {
     harness.notify('npc0', 'turn/completed', { turn: { id: turnId, status: 'failed', error: { message: failure } } })
     await vi.waitFor(() => expect(services.errors.length).toBe(5))
     expect(harness.snapshot()).toMatchObject({ stage: 'error', error: `推論に失敗しました: npc0/${turnId}: ${failure}` })
-    expect(harness.checkpoint().active).toEqual({})
+    await vi.waitFor(() => expect(harness.checkpoint().active).toEqual({}))
     expect(harness.checkpoint().jobs.filter(j => j.turnId === turnId).every(j => j.status === 'done' && j.completed)).toBe(true)
     expect(services.saved!.jobs.filter(j => j.turnId === turnId).every(j => j.status === 'done')).toBe(true)
     expect(interrupted).not.toContain('npc0')

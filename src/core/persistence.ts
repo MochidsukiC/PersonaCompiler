@@ -7,6 +7,8 @@ export interface SavedBackend {
   version: 1
   lifeVersion?: 1
   memoryVersion?: 1
+  economyVersion?: 1
+  economySeed?: import('./economy-contracts').EconomySeed
   lifecycleVersion?: 1
   compilation?: import('./compiler-contracts').Compilation
   production?: import('./compiler-contracts').ProductionOperation
@@ -29,6 +31,7 @@ export interface PersistenceStatus {
 }
 export interface LifePatch { path: (string | number)[]; value: unknown }
 export type LifeHistoryRecord =
+  | { kind: 'economy'; value: import('./economy-contracts').EconomyRecord }
   | MemoryArchive
   | { kind: 'job'; value: LifeCheckpoint['jobs'][number] }
   | { kind: 'receipt'; key: string; value: LifeCheckpoint['receipts'][string] }

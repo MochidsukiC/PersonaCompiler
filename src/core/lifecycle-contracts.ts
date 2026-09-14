@@ -10,7 +10,7 @@ export const identitySchema = z.object({
 }).strict()
 export const residentSchema = identitySchema.extend({
   sexCategory: z.enum(['male', 'female', 'other']), generation: z.number().int().nonnegative(),
-  bornTurn: z.number().int().nonnegative(), diedTurn: z.number().int().nonnegative().nullable()
+  bornTurn: z.number().int().nonnegative(), diedTurn: z.number().int().nonnegative().nullable(), deathCause: z.enum(['old_age', 'health']).optional()
 })
 export const birthSchema = z.object({
   id, parents: z.tuple([id, id]), homeParentId: id, dueDay: z.number().int().positive(),

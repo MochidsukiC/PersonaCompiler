@@ -2,6 +2,7 @@ import { z } from 'zod'
 import { memoryProgressSchema, memoryTools } from './memory-contracts'
 import { lifecycleSchema, lifecycleTools } from './lifecycle-contracts'
 import { worldEventPlanSchema } from './world-event-contracts'
+import { economySchema, economyTools } from './economy-contracts'
 
 const id = z.string().regex(/^[a-zA-Z0-9][a-zA-Z0-9_-]{0,88}$/)
 export const voxelSchema = z.object({ x: z.number().int().nonnegative(), y: z.number().int().nonnegative(), z: z.number().int().nonnegative() }).strict()
@@ -24,10 +25,11 @@ export const organizationSchema = z.object({
   founderId: id, foundedTurn: z.number().int().nonnegative(), locationId: id.nullable(), members: z.array(id)
 }).strict()
 export const lifeEventSchema = z.object({
-  sequence: z.number().int(), turn: z.number().int(), kind: z.enum(['move', 'travel', 'speech', 'facility', 'sleep', 'wake', 'end', 'entry', 'death', 'birth', 'marriage', 'home', 'organization', 'construction', 'world']),
+  sequence: z.number().int(), turn: z.number().int(), kind: z.enum(['move', 'travel', 'speech', 'facility', 'sleep', 'wake', 'end', 'entry', 'death', 'birth', 'marriage', 'home', 'organization', 'construction', 'world', 'economy']),
   actorId: id, text: z.string(), recipients: z.array(id), volume: voiceSchema.optional(), locationId: id.nullable(), position: voxelSchema.nullable(), worldEventId: id.optional()
 })
 export const simulationSchema = z.object({
+  economy: economySchema.optional(),
   worldEvents: z.array(worldEventPlanSchema).optional(),
   organizations: z.array(organizationSchema).optional(),
   lifecycle: lifecycleSchema.optional(),
@@ -79,9 +81,9 @@ export const lifeToolDescriptions: Record<LifeToolName, string> = {
   endTurn: '現在地でこの世界ターンの活動を終了する。新着発話・施設回答・ユーザー入力への反応は次ターンまで停止する。',
   sleep: '現在の時間帯の活動を終了して眠る。同じConversationでCompactした後、次の世界ターン開始時に起床する。'
 }
-export function lifeTools(role: 'npc' | 'facility', memoryEnabled = false, lifecycleEnabled = false) {
+export function lifeTools(role: 'npc' | 'facility', memoryEnabled = false, lifecycleEnabled = false, economyEnabled = false) {
   const names: LifeToolName[] = role === 'npc'
     ? ['getSituation', 'createOrganization', 'joinOrganization', 'leaveOrganization', 'buildFacility', 'setInitialPosition', 'moveWithinFacility', 'moveToFacility', 'sendMessage', 'useFacility', 'endTurn', 'sleep']
     : ['initializeFacility', 'completeFacilityUse']
-  return [...names.map(name => ({ type: 'function' as const, name, description: lifeToolDescriptions[name], inputSchema: z.toJSONSchema(lifeToolSchemas[name]) })), ...(role === 'npc' && memoryEnabled ? memoryTools() : []), ...(lifecycleEnabled ? lifecycleTools(role) : [])]
+  return [...names.map(name => ({ type: 'function' as const, name, description: lifeToolDescriptions[name], inputSchema: z.toJSONSchema(lifeToolSchemas[name]) })), ...(role === 'npc' && memoryEnabled ? memoryTools() : []), ...(lifecycleEnabled ? lifecycleTools(role) : []), ...(role === 'npc' && economyEnabled ? economyTools() : [])]
 }

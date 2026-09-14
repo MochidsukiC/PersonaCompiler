@@ -1,0 +1,26 @@
+.economy-panel { overflow: auto; padding: 24px; color: #d3dfd9; min-height: 0; }
+.economy-panel h1 { font-size: 22px; margin: 0 0 8px; }
+.economy-panel h2 { font-size: 17px; margin: 28px 0 12px; }
+.economy-panel h3 { font-size: 14px; margin: 0 0 8px; }
+.economy-panel p, .economy-company p { line-height: 1.7; overflow-wrap: anywhere; }
+.economy-panel small, .economy-company small { display: block; color: #a2b7ab; line-height: 1.7; overflow-wrap: anywhere; }
+.economy-panel article { padding: 16px; border: 1px solid #35483e; border-radius: 10px; background: #17221c; margin-bottom: 10px; }
+.economy-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(240px, 1fr)); gap: 12px; }
+.economy-summary { display: flex; gap: 20px; flex-wrap: wrap; padding: 16px; background: #213328; border-radius: 10px; }
+.economy-summary strong { display: block; font-size: 20px; margin-top: 8px; }
+.economy-vitals { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 10px; }
+.economy-vitals label { font-size: 12px; }
+.economy-vitals strong, .economy-vitals meter { display: block; width: 100%; margin-top: 6px; }
+.economy-balance strong { font-size: 20px; margin-left: 12px; }
+.economy-holdings { padding-left: 20px; }
+.economy-holdings li { padding: 8px 0; border-bottom: 1px solid #2c3d33; }
+.economy-muted { color: #9bb0a3; font-size: 12px; }
+.economy-records { padding-left: 20px; }
+.economy-records li { padding: 12px 0; border-bottom: 1px solid #35483e; overflow-wrap: anywhere; line-height: 1.7; }
+.economy-records details { font-size: 11px; color: #9bb0a3; }
+.economy-residents { display: flex; gap: 8px; flex-wrap: wrap; }
+.economy-residents button { text-align: left; padding: 10px; border: 1px solid #35483e; border-radius: 8px; }
+.economy-company { border-top: 1px solid #35483e; margin-top: 14px; padding-top: 10px; }
+.economy-totals { display: grid; grid-template-columns: 1fr 1fr; gap: 7px; }
+.economy-totals dd { margin: 0; text-align: right; }
+.economy-person { padding: 16px; }

@@ -1,5 +1,6 @@
 import type { SimulationSnapshot } from '../../core/life-contracts'
 import './organizations.css'
+import { CompanyEconomy } from './EconomyPanel'
 
 export function OrganizationsPanel({ simulation, onAgent }: { simulation: SimulationSnapshot; onAgent: (id: string) => void }) {
   const organizations = simulation.organizations ?? []
@@ -12,7 +13,7 @@ export function OrganizationsPanel({ simulation, onAgent }: { simulation: Simula
       <dt>所在地</dt><dd>{o.locationId === null ? '固定の所在地なし' : simulation.facilities.find(f => f.locationId === o.locationId)?.name ?? o.locationId}</dd>
       <dt>構成員</dt><dd>{o.members.length ? o.members.map(id => <button key={id} onClick={() => onAgent(id)}>{person(id)?.name ?? id}{person(id)?.activity === 'dead' ? '（故人）' : ''}</button>) : '現在の構成員なし'}</dd>
       <dt>施設</dt><dd>{simulation.facilities.filter(f => f.construction?.organizationId === o.id).map(f => <div key={f.id}>{f.name} · {f.layout ? <button onClick={() => onAgent(`facility-${f.id}`)}>利用可能・施設担当</button> : '建設中'}</div>)}</dd>
-    </dl><small>{o.id}</small></article>)}
+    </dl>{simulation.economy && <CompanyEconomy world={simulation} organizationId={o.id} />}<small>{o.id}</small></article>)}
     <h2>住民による施設建設</h2>
     {!simulation.facilities.some(f => f.construction) && <p>まだ建設依頼はありません。</p>}
     {simulation.facilities.filter(f => f.construction).map(f => <article key={f.id} className="organization-card"><h2>{f.name} <small>{f.type} · {f.layout ? '利用可能' : '建設中'}</small></h2><p>{f.construction!.description}</p><p>建設者: <button onClick={() => onAgent(f.construction!.builderId)}>{person(f.construction!.builderId)?.name ?? f.construction!.builderId}</button> · turn {f.construction!.requestedTurn}</p><p>{f.construction!.organizationId === null ? '個人の施設' : organizations.find(o => o.id === f.construction!.organizationId)?.name}</p>{f.layout && <button onClick={() => onAgent(`facility-${f.id}`)}>施設担当を開く</button>}</article>)}

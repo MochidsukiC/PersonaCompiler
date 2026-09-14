@@ -89,6 +89,7 @@ export type Population = z.infer<typeof populationSchema>
 export const sessionBindingSchema = z.object({
   agentId: z.string().regex(/^[a-zA-Z0-9][a-zA-Z0-9_-]{0,88}$/), sessionId: z.string().regex(/^[a-zA-Z0-9][a-zA-Z0-9_-]{0,88}$/), role: z.enum(['parent', 'npc', 'facility']),
   threadId: z.string().nullable(), cwd: z.string(), modelId: z.string(), effort: effortSchema,
+  economyVersion: z.literal(1).optional(),
   lifecycleVersion: z.literal(1).optional(),
   communityToolsVersion: z.union([z.literal(1), z.literal(2)]).optional(),
   worldEventToolsVersion: z.literal(1).optional(),

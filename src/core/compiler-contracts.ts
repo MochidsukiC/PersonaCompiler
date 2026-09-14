@@ -10,7 +10,7 @@ export const characterPackageSchema = z.object({
   memoryIds: z.array(z.string()), relationshipTargets: z.array(z.string())
 }).strict()
 export const productionOperationSchema = z.object({
-  id: z.string(), kind: z.enum(['birth', 'compile']), targetId: z.string(), output: z.string(),
+  id: z.string(), kind: z.enum(['birth', 'compile', 'economySeed', 'item']), targetId: z.string(), output: z.string(),
   turnId: z.string().nullable(), status: z.enum(['requested', 'running', 'completed', 'failed', 'uncertain']), error: z.string().nullable()
 })
 export const compilationSchema = z.object({

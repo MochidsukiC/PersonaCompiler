@@ -2,6 +2,8 @@ import { contextBridge, ipcRenderer } from 'electron'
 import type { AppEvent, DesktopApi } from '../shared/contracts'
 
 const api: DesktopApi = {
+  economyHistory: (actorId, before) => ipcRenderer.invoke('persona:economy-history', actorId, before),
+  inventory: actorId => ipcRenderer.invoke('persona:inventory', actorId),
   inspectCharacterPackage: manifestPath => ipcRenderer.invoke('persona:inspect-character-package', manifestPath),
   eventHistory: query => ipcRenderer.invoke('persona:event-history', query),
   devPanel: () => ipcRenderer.invoke('persona:dev-panel'),

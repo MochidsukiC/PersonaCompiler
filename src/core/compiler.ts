@@ -5,10 +5,12 @@ import { residentSchema } from './lifecycle-contracts'
 import { memoryRecordSchema, memoryRelationSchema } from './memory-contracts'
 import { conversationTurnSchema } from '../shared/conversation'
 import { lifeEventSchema } from './life-contracts'
+import { economyRecordSchema, economySchema, holdingSchema, itemDefinitionSchema, vitalSchema } from './economy-contracts'
 
 export interface CompilerPromptProvider { compiler(): string }
 export class StandardCompilerPrompts implements CompilerPromptProvider { compiler(): string { return document } }
 export const compilerInputSchema = z.object({
+  inventory: z.object({ version: z.literal(1), npcId: z.string(), currency: z.string(), vitals: vitalSchema, account: economySchema.shape.accounts.valueType, holdings: z.array(holdingSchema), catalog: z.array(itemDefinitionSchema), acquisitionRights: z.array(itemDefinitionSchema), companies: z.array(z.object({ organizationId: z.string(), account: economySchema.shape.accounts.valueType, holdings: z.array(holdingSchema), acquisitionRights: z.array(itemDefinitionSchema) })), employment: economySchema.shape.employment, provenance: z.array(economyRecordSchema), experiences: z.array(economyRecordSchema) }).optional(),
   identity: residentSchema, memories: z.array(memoryRecordSchema), relations: z.array(memoryRelationSchema),
   conversation: z.array(conversationTurnSchema), events: z.array(lifeEventSchema), evidenceIds: z.array(z.string())
 })

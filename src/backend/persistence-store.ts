@@ -3,6 +3,7 @@ import { mkdir, open, readFile, realpath } from 'node:fs/promises'
 import path from 'node:path'
 import { z } from 'zod'
 import { publishFile } from '../main/atomic-write'
+import { economyRecordSchema, type EconomyRecord } from '../core/economy-contracts'
 import { lifeCheckpointSchema } from '../core/life-harness'
 import { memoryArchiveSchema, type MemoryArchive } from '../core/memory-contracts'
 import type { LifeHistoryRecord, LoadedMemoryRun, PersistenceChange, SaveManifest, SaveReceipt, SavedMemoryRun } from '../core/persistence'
@@ -12,6 +13,7 @@ const segmentSchema = z.object({ file: z.string().regex(/^history\/\d+-\d+-[a-f0
 export const manifestSchema = z.object({ version: z.literal(2), runId: z.string(), revision: z.number().int().nonnegative(), generation: z.number().int().positive(), slot: z.enum(['a', 'b']), hash: z.string(), dirty: z.boolean(), savedAt: z.string(), segments: z.array(segmentSchema) })
 const historySchema = z.discriminatedUnion('kind', [
   ...memoryArchiveSchema.options,
+  z.object({ kind: z.literal('economy'), value: economyRecordSchema }),
   z.object({ kind: z.literal('job'), value: lifeCheckpointSchema.shape.jobs.element }),
   z.object({ kind: z.literal('receipt'), key: z.string(), value: lifeCheckpointSchema.shape.receipts.valueType }),
   z.object({ kind: z.literal('event'), value: lifeCheckpointSchema.shape.world.shape.events.element }),
@@ -41,6 +43,7 @@ export class PersistenceStore {
     if (saved.life) saved.life = lifeCheckpointSchema.parse(saved.life)
     const receipts: NonNullable<SavedMemoryRun['life']>['receipts'] = {}
     const memoryArchive: MemoryArchive[] = []
+    const economyArchive: EconomyRecord[] = []
     const events: NonNullable<SavedMemoryRun['life']>['world']['events'] = []
     const completedJobKinds: NonNullable<NonNullable<SavedMemoryRun['life']>['completedJobKinds']> = {}
     let previous = 0
@@ -54,6 +57,7 @@ export class PersistenceStore {
         if (entry.revision <= previous) throw new Error(`履歴が重複しています: ${segment.file}/${entry.revision}`)
         for (const record of entry.records) {
           if (record.kind === 'memorySource' || record.kind === 'memoryRecord' || record.kind === 'memoryRecall') memoryArchive.push(record)
+          if (record.kind === 'economy') economyArchive.push(record.value)
           if (record.kind === 'receipt') receipts[record.key] = record.value
           if (record.kind === 'job' && ['done', 'discarded'].includes(record.value.status)) completedJobKinds[record.value.id] = record.value.kind
           if (record.kind === 'event') { events.push(record.value); if (events.length > 200) events.shift() }
@@ -65,6 +69,7 @@ export class PersistenceStore {
     this.run = structuredClone(saved); this.revision = manifest.revision; this.manifest = manifest
     if (saved.life) { saved.life.receipts = receipts; saved.life.world.events = events; saved.life.completedJobKinds = completedJobKinds }
     if (saved.life?.cognition) saved.life.memoryArchive = memoryArchive
+    if (saved.life?.world.economy) saved.life.economyArchive = economyArchive
     return { manifest, run: saved }
   }
   apply(change: PersistenceChange): void {
@@ -77,12 +82,14 @@ export class PersistenceStore {
       if (change.kind === 'initializeLife') {
         const value = change.value
         const records: LifeHistoryRecord[] = [
+          ...(value.economyArchive ?? []).map(value => ({ kind: 'economy' as const, value })),
           ...value.jobs.map(job => ({ kind: 'job' as const, value: job })),
           ...value.interactions.map(item => ({ kind: 'interaction' as const, value: item })),
           ...value.world.events.map(event => ({ kind: 'event' as const, value: event })),
           ...Object.entries(value.receipts).map(([key, receipt]) => ({ kind: 'receipt' as const, key, value: receipt }))
         ]
         this.run.life = { ...value, jobs: value.jobs.filter(job => !['done', 'discarded'].includes(job.status)), interactions: value.interactions.filter(item => !item.done), receipts: {}, world: { ...value.world, events: [] } }
+        delete this.run.life.economyArchive
         if (records.length) this.pending.push({ revision: change.revision, records })
       }
       else {

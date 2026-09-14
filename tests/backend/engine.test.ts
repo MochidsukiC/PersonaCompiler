@@ -10,6 +10,8 @@ import type { AgentModelSettings, PreparationProgress, SessionBinding } from '..
 import { digest } from '../../src/main/workspace'
 import { models, settings, round, answers, draft, population } from './fixtures'
 import { FixturePersistencePort } from './persistence-fixture'
+import { chicken, personal, seed } from '../fixtures/economy'
+import type { EconomySeed } from '../../src/core/economy-contracts'
 import { DevStore } from '../../src/backend/dev-store'
 
 class Runtime implements AgentRuntime {
@@ -22,6 +24,7 @@ class Runtime implements AgentRuntime {
   instructions: string[] = []
   resumed: { agentId: string; threadId: string | null; instructions?: string }[] = []
   inputs: string[] = []
+  initialEconomy: EconomySeed | undefined
   failCreation = false
   mode: 'chatgpt' | 'apiKey' = 'chatgpt'
   available = models
@@ -56,7 +59,7 @@ class Runtime implements AgentRuntime {
     if (binding.role === 'parent' && text.includes('Harnessの承認済み制作処理です')) {
       const relative = text.match(/入力資料: (production\/[a-f0-9-]+\/input.json)/)![1]
       const input = JSON.parse(await readFile(path.join(binding.cwd, relative), 'utf8'))
-      await writeFile(path.join(binding.cwd, relative.replace('input.json', 'result.json')), JSON.stringify({ npcId: input.identity.id, lifeSummary: [], personality: [], speechTendency: [], appearance: [], goals: [], behavior: [], schedule: [], runtimeGuidance: '', systemPrompt: '住民として応答する', memoryIds: [], relationshipTargets: [] }))
+      await writeFile(path.join(binding.cwd, relative.replace('input.json', 'result.json')), JSON.stringify(input.population ? this.initialEconomy ?? { currency: '円', balances: input.population.npcs.map((n: { id: string }) => ({ npcId: n.id, amount: 1000 })), catalog: [], holdings: [] } : input.request ? { decision: 'approved', reason: 'fixture approval', item: chicken } : { npcId: input.identity.id, lifeSummary: [], personality: [], speechTendency: [], appearance: [], goals: [], behavior: [], schedule: [], runtimeGuidance: '', systemPrompt: '住民として応答する', memoryIds: [], relationshipTargets: [] }))
       setTimeout(() => {
         this.listener({ method: 'turn/started', params: { threadId: binding.threadId, turn: { id } } })
         this.listener({ method: 'turn/completed', params: { threadId: binding.threadId, turn: { id, status: 'completed' } } })
@@ -83,7 +86,7 @@ class Runtime implements AgentRuntime {
   async history(threadId: string) { return this.historyTurns.get(threadId) ?? [] }
   async conversation(_threadId: string): Promise<import('../../src/shared/conversation').ConversationTurn[]> { return [] }
   async interrupt() {}
-  async inspect() { return 'idle' as const }
+  async inspect(): Promise<'active' | 'idle'> { return 'idle' }
   async turn() { return null }
   async close() {}
 }
@@ -145,6 +148,47 @@ async function review(engine: BackendEngine, runtime: Runtime, configuration = s
 }
 
 describe('Preparation harness', () => {
+  it('queues item approval behind the parent conversation while NPCs finish and restores economy bindings', async () => {
+    const { engine, runtime, root } = await setup(undefined, true)
+    await review(engine, runtime); await engine.backendCommand({ type: 'approve', revision: 1 }); await complete(engine, runtime, population)
+    expect(engine.backendStatus().simulation!.economy!.vitals.npc0).toMatchObject({ hp: 100, hunger: 100, san: 100 })
+    const parent = engine.backendStatus().preparation.sessions.find(s => s.role === 'parent')!
+    const handler = runtime.toolHandler
+    let requested = false, busy = true
+    vi.spyOn(runtime, 'inspect').mockImplementation(async () => busy ? 'active' : 'idle')
+    runtime.toolHandler = async call => {
+      if (call.threadId === 'thread-npc0' && call.tool === 'endTurn' && !requested) {
+        requested = true
+        const result = await handler({ ...call, callId: 'item-request', tool: 'requestItem', arguments: { name: chicken.name, description: chicken.description, organizationId: null } })
+        expect(result.success).toBe(true)
+        expect(await handler({ ...call, callId: 'item-request', tool: 'requestItem', arguments: { name: chicken.name, description: chicken.description, organizationId: null } })).toEqual(result)
+      }
+      return handler(call)
+    }
+    runtime.listener({ method: 'turn/started', params: { threadId: parent.threadId, turn: { id: 'busy-parent' } } })
+    try {
+      await engine.backendCommand({ type: 'startSimulation', step: true })
+      await vi.waitFor(() => {
+        expect(engine.backendStatus().simulation!.economy!.requests).toMatchObject([{ status: 'running' }])
+        expect(engine.backendStatus().simulation!.actors.every(a => a.activity === 'ended')).toBe(true)
+      }, { timeout: 10000 })
+      expect(engine.backendStatus().simulation).toMatchObject({ stage: 'running', turn: 1 })
+      expect(runtime.inputs.filter(t => t.includes('NPCからの品物登録申請です'))).toHaveLength(0)
+    } finally {
+      busy = false
+      runtime.listener({ method: 'turn/completed', params: { threadId: parent.threadId, turn: { id: 'busy-parent', status: 'completed' } } })
+    }
+    await vi.waitFor(() => expect(engine.backendStatus().simulation?.stage).toBe('paused'), { timeout: 10000 })
+    expect(engine.backendStatus().simulation!.economy!.catalog).toMatchObject([{ item: chicken, licensees: [personal()] }])
+    expect(runtime.inputs.filter(t => t.includes('NPCからの品物登録申請です'))).toHaveLength(1)
+    await engine.close(); engines.delete(engine)
+    const restored = await setup(root, true)
+    expect(restored.engine.backendStatus().simulation!.economy!.requests).toMatchObject([{ status: 'approved', itemId: chicken.id }])
+    expect(restored.engine.backendStatus().preparation.sessions.every(s => s.economyVersion === 1)).toBe(true)
+    expect(restored.runtime.resumed.find(s => s.agentId === 'npc0')!.instructions).toContain('requestItem')
+    expect(restored.runtime.inputs).toEqual([])
+  })
+
   it('registers parent event tools and authorizes only the current parent turn, retaining schedules on reconnect', async () => {
     const { engine, runtime, root } = await setup()
     const creation = vi.spyOn(runtime, 'create')
@@ -613,6 +657,8 @@ describe('DEV experiments', () => {
     await ready(engine)
     const point = (await engine.devPanel()).checkpoints.find(c => c.label === 'Turn 1 終了')!
     expect(point).toBeDefined()
+    const savedEconomy = engine.backendStatus().simulation!.economy!
+    expect(savedEconomy.vitals.npc0).toMatchObject({ hp: 100, hunger: 90, san: 98 })
     const oldThreads = engine.backendStatus().preparation.sessions.map(s => s.threadId)
     const oldHistory = structuredClone(runtime.historyTurns)
     await engine.backendCommand({ type: 'devPrompts', prompts: { npc: 'LATEST {{townName}} {{birthModelId}}', parent: 'PARENT_LATEST' } })
@@ -627,6 +673,8 @@ describe('DEV experiments', () => {
     expect(engine.snapshot().state.runId).not.toBe(originalId)
     expect(engine.backendStatus().error).toBeNull()
     expect(engine.backendStatus().simulation).toMatchObject({ turn: 1, stage: 'paused', phase: 'between' })
+    expect(engine.backendStatus().simulation!.economy).toEqual(savedEconomy)
+    expect(engine.backendStatus().preparation.sessions.every(s => s.economyVersion === 1)).toBe(true)
     expect(engine.backendStatus().preparation.sessions.every(s => !oldThreads.includes(s.threadId))).toBe(true)
     expect((await engine.devPanel()).state?.prompts.parent).toBe('PARENT_LATEST')
     expect(runtime.resumed.filter(s => s.agentId === 'npc0').at(-1)?.instructions).toContain('LATEST 試験の町')
@@ -731,12 +779,21 @@ it('stops before inference when a DEV checkpoint cannot be saved', async () => {
 it('checkpoints the final DEV world before automatic Compilation and does not compile merely by branching', async () => {
   const { engine, runtime, root } = await setup(undefined, true)
   await engine.backendCommand({ type: 'devEnable' })
+  runtime.initialEconomy = { ...seed, catalog: [{ item: chicken, licensees: [personal()] }], holdings: [{ npcId: 'npc0', itemId: 'chicken', quantity: 2 }] }
   const specification = structuredClone(draft); specification.specification.simulation.maxTurns = 1
   await review(engine, runtime, settings, specification)
   await engine.backendCommand({ type: 'approve', revision: 1 })
   await complete(engine, runtime, population)
   await engine.backendCommand({ type: 'startSimulation', step: false })
   await vi.waitFor(() => expect(engine.backendStatus().compilation?.status).toBe('completed'), { timeout: 10000 })
+  const task = engine.backendStatus().compilation!.tasks.find(t => t.npcId === 'npc0')!
+  const inventory = JSON.parse(await engine.workspace.read(task.output + '/inventory.json'))
+  expect(inventory.holdings).toMatchObject([{ itemId: 'chicken', quantity: 2 }])
+  expect(inventory.vitals).toMatchObject({ hp: 100, hunger: 90, san: 98 })
+  expect(JSON.parse(await engine.workspace.read(task.output + '/manifest.json')).files['inventory.json']).toBe(digest(await engine.workspace.read(task.output + '/inventory.json')))
+  const source = JSON.parse(await engine.workspace.read(task.input))
+  expect(source.evidenceIds).toContain('inventory')
+  expect(source.inventory.provenance.every((r: { participants: string[] }) => r.participants.includes('npc0'))).toBe(true)
   const point = (await engine.devPanel()).checkpoints.find(c => c.label === 'Turn 1 終了')!
   expect(point).toBeDefined()
   const inputs = runtime.inputs.length

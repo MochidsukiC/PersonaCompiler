@@ -6,13 +6,15 @@ import type { AgentDescriptor, TerminalChunk } from '../../shared/contracts'
 import { roleLabels } from './labels'
 import { MessageView } from './MessageView'
 import { MemoryPanel } from './MemoryPanel'
+import { NpcEconomyPanel } from './EconomyPanel'
+import type { SimulationSnapshot } from '../../core/life-contracts'
 
-export function TerminalPane({ agent, real = false, connected = true, memoryEnabled = false, readOnly = false, onError }: { agent: AgentDescriptor; real?: boolean; connected?: boolean; memoryEnabled?: boolean; readOnly?: boolean; onError: (message: string) => void }) {
+export function TerminalPane({ agent, real = false, connected = true, memoryEnabled = false, readOnly = false, simulation, onError }: { agent: AgentDescriptor; real?: boolean; connected?: boolean; memoryEnabled?: boolean; readOnly?: boolean; simulation?: SimulationSnapshot; onError: (message: string) => void }) {
   const container = useRef<HTMLDivElement>(null)
   const [ready, setReady] = useState(false)
   const [reconnecting, setReconnecting] = useState(false)
   const [generation, setGeneration] = useState(0)
-  const [requestedView, setView] = useState<'codex' | 'messages' | 'memory'>(readOnly ? 'messages' : 'codex')
+  const [requestedView, setView] = useState<'codex' | 'messages' | 'memory' | 'economy'>(readOnly ? 'messages' : 'codex')
   const view = readOnly && requestedView === 'codex' ? 'messages' : requestedView
   const reconnect = async () => {
     setReconnecting(true)
@@ -102,6 +104,8 @@ export function TerminalPane({ agent, real = false, connected = true, memoryEnab
     {agent.role === 'npc' && <div className="chat-view-switch" role="group" aria-label="チャット表示"><button aria-pressed={view === 'codex'} onClick={() => setView(readOnly ? 'messages' : 'codex')}><TerminalSquare size={14} />Codex</button><button aria-pressed={view === 'messages'} onClick={() => setView('messages')}><MessageCircle size={14} />メッセージ</button></div>}
     <div className="terminal-host" hidden={view !== 'codex'} ref={container} data-testid="terminal" data-ready={ready} />
     {agent.role === 'npc' && memoryEnabled && <button className="button compact" onClick={() => setView('memory')} aria-pressed={view === 'memory'}>記憶・未来の意図</button>}
+    {agent.role === 'npc' && simulation?.economy && <button className="button compact" onClick={() => setView('economy')} aria-pressed={view === 'economy'}>持ち物・状態</button>}
+    {view === 'economy' && simulation?.economy && <NpcEconomyPanel world={simulation} actorId={agent.id} />}
     {view === 'memory' && <MemoryPanel key={agent.id} agentId={agent.id} />}
     <div className="terminal-footer" hidden={view !== 'codex'}><span className="status-dot" /> 選択中のCtrl+Cはコピー／未選択は割り込み<span>UTF-8</span></div>
     {view === 'messages' && (real ? <MessageView agent={agent} connected={connected} /> : <div className="message-view"><p className="message-empty">メッセージ履歴は実Codex接続時に利用できます。</p></div>)}

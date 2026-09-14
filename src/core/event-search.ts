@@ -2,7 +2,7 @@ import { z } from 'zod'
 import { lifeEventSchema, type SimulationSnapshot } from './life-contracts'
 
 type LifeEvent = SimulationSnapshot['events'][number]
-export const eventLabels: Record<LifeEvent['kind'], string> = { move: '施設内移動', travel: '施設間移動', speech: '発話', facility: '施設利用', sleep: '睡眠', wake: '起床', end: '活動終了', entry: '入場', death: '死亡', birth: '出生', marriage: '結婚', home: '新居', organization: '組織', construction: '施設建設', world: '世界イベント' }
+export const eventLabels: Record<LifeEvent['kind'], string> = { move: '施設内移動', travel: '施設間移動', speech: '発話', facility: '施設利用', sleep: '睡眠', wake: '起床', end: '活動終了', entry: '入場', death: '死亡', birth: '出生', marriage: '結婚', home: '新居', organization: '組織', construction: '施設建設', world: '世界イベント', economy: '経済・持ち物' }
 export const eventFilterSchema = z.object({ actorId: z.string().max(160), kind: z.union([lifeEventSchema.shape.kind, z.enum(['all', 'unheard'])]), turn: z.string().regex(/^(?:\d{1,9})?$/), query: z.string().max(1000) }).strict()
 export type EventFilter = z.infer<typeof eventFilterSchema>
 export const emptyEventFilter: EventFilter = { actorId: '', kind: 'all', turn: '', query: '' }

@@ -30,6 +30,10 @@ export function buildCharacterReview(input: CompilerInput, result: CharacterPack
     if (references.includes(id)) sources.set(id, { id, title, text: typeof value === 'string' ? value : JSON.stringify(value, null, 2) })
   }
   add('identity', '人物の初期条件・現在の属性', input.identity)
+  if (input.inventory) {
+    add('inventory', '最終所持品・生存状態', input.inventory)
+    for (const record of input.inventory.experiences) add(`economy:${record.id}`, `本人の経済経験 · turn ${record.turn}`, record)
+  }
   for (const memory of input.memories) add(`memory:${memory.id}:${memory.revision}`, `本人の記憶 · 整理 turn ${memory.organizedTurn} · revision ${memory.revision}`, memory)
   for (const relation of input.relations) add(`relation:${relation.target}`, `本人から ${relation.target} への認識`, relation)
   for (const turn of input.conversation) add(`conversation:${turn.id}`, `本人のConversation · ${turn.status}`, turn)

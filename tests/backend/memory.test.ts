@@ -212,7 +212,11 @@ it('resumes a confirmed interrupted consolidation only after the user resumes an
   const before = starts.length
   expect(compacted).toEqual([])
   await h.resume(true)
-  await vi.waitFor(() => expect(starts.slice(before).filter(s => s.id === 'npc0' && s.text.includes('睡眠時の記憶整理'))).toHaveLength(1))
+  await vi.waitFor(() => {
+    const resumed = starts.slice(before).filter(s => s.id === 'npc0' && s.text.includes('睡眠時の記憶整理'))
+    expect(resumed).toHaveLength(1)
+    expect(h.checkpoint().active.npc0?.turnId).toBe(resumed[0].turnId)
+  })
   expect((await call('npc0', 'consolidateMemory', { memories: [], forgetIds: [], relations: [] })).success).toBe(true)
   await h.pause(); await h.drain()
   expect(h.memoryInspection('npc0').progress.consolidation).toBe('complete')

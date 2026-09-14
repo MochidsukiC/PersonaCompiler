@@ -38,6 +38,16 @@ function register(channel: string, operation: (...args: unknown[]) => unknown): 
 }
 
 const identifier = z.string().min(1).max(160)
+register('economy-history', (actorId, before) => {
+  const target = currentEngine()
+  if (!(target instanceof BackendEngine)) throw new Error('経済履歴にはBackendが必要です')
+  return target.economyHistory(identifier.optional().parse(actorId), identifier.optional().parse(before))
+})
+register('inventory', actorId => {
+  const target = currentEngine()
+  if (!(target instanceof BackendEngine)) throw new Error('所持品の来歴にはBackendが必要です')
+  return target.inventory(identifier.parse(actorId))
+})
 register('inspect-character-package', manifestPath => inspectCharacterPackage(currentEngine().workspace, z.string().min(1).max(1000).parse(manifestPath)))
 register('event-history', query => {
   const target = currentEngine()

@@ -70,6 +70,8 @@ export type ImageInput = PreparationInput['images'][number]
 export type AppEvent = { type: 'workspace'; snapshot: WorkspaceSnapshot } | { type: 'terminal'; chunk: TerminalChunk } | { type: 'error'; message: string }
 
 export interface DesktopApi {
+  economyHistory(actorId?: string, before?: string): Promise<import('../core/economy-contracts').EconomyRecord[]>
+  inventory(actorId: string): Promise<ReturnType<typeof import('../core/economy').economyInventory>>
   inspectCharacterPackage(manifestPath: string): Promise<import('../core/compiler-contracts').CharacterPackageInspection>
   eventHistory(query: import('../core/event-search').EventHistoryQuery): Promise<import('../core/event-search').EventHistoryPage>
   devPanel(): Promise<import('../core/dev-contracts').DevPanelState>
