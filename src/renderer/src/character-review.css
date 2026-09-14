@@ -4,6 +4,9 @@
 .review-metrics { display: flex; flex-wrap: wrap; gap: 10px 20px; padding: 12px 0; border-block: 1px solid #3a4f3c; }
 .review-note { color: #9db096; font-size: 11px; }
 .character-review input { display: block; width: 100%; padding: 9px; margin-top: 5px; border: 1px solid #4c6549; border-radius: 5px; color: #d8e5cf; background: #121b15; }
+.review-search { display: flex; flex-wrap: wrap; gap: 12px; margin-top: 14px; }
+.review-search label { flex: 1 1 180px; min-width: 0; }
+.review-search select { display: block; width: 100%; padding: 9px; margin-top: 5px; border: 1px solid #4c6549; border-radius: 5px; color: #d8e5cf; background: #121b15; }
 .review-claim { border-left: 2px solid #638453; margin: 10px 0; padding: 2px 12px 10px; background: #1a291e; }
 .review-claim p { white-space: pre-wrap; }
 .review-citations { display: flex; flex-wrap: wrap; gap: 7px; }

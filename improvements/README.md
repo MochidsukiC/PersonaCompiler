@@ -29,7 +29,8 @@
 | `c9d402e` | 親へ渡す出生・Compilation入力の変更を検出し、不整合な結果の採用を停止 | [23](23-production-input-integrity.md) |
 | `8457234` | 成果物の照合結果を、manifestのhash・照合時刻付きのMarkdownとJSONでコピー | [24](24-package-inspection-report.md) |
 | `bf60780` | 合成資料でレビュー比較・根拠確認・成果物照合を試せる専用デモコマンド | [25](25-offline-review-demo.md) |
-| `git log --oneline -- improvements/26-preview-retry.md`で確認 | プレビュー失敗後、同じファイルの再選択や専用ボタンから再試行できるよう修正 | [26](26-preview-retry.md) |
+| `797a84f` | プレビュー失敗後、同じファイルの再選択や専用ボタンから再試行できるよう修正 | [26](26-preview-retry.md) |
+| `git log --oneline -- improvements/27-review-evidence-search.md`で確認 | 根拠資料の本文・題名・IDから、その資料を参照するNPC設定を逆引き | [27](27-review-evidence-search.md) |
 
 各コミットの直後に差分の自己レビューを実施しました。機能ごとに取り消す場合は、作業ツリーの変更を確認したうえで`git revert <commit>`を使えます。全体を戻す場合は表の下から上の順にrevertしてください。
 
@@ -45,6 +46,7 @@
 - 生成済みNPCの「成果物を照合」でmanifestと各ファイルの一致・変更・欠損を確認できます。特定のゲーム形式には依存しません。
 - 「照合レポートをコピー」で、照合したmanifestと各ファイルのhash・結果・時刻を制作担当者や実装用agentへ渡せます。貼り付けたMarkdownの末尾にJSONも含まれます。
 - 今回の変更後に生成したCompilationには「制作レビュー」が付きます。既存出力は自動で再生成していません。
+- 制作レビューの検索対象を「根拠資料」にすると、出来事や資料の語句・IDから、その資料を参照する設定を探せます。「検索一致」の根拠ボタンで全文を確認できます。
 - 同じNPCの制作レビューが2つあれば、「別の出力と比較」で再生成による変更を確認できます。比較そのものにモデル推論は不要です。
 - 「比較レポートをコピー」で変更内容・両側の根拠・参照情報を制作記録へ持ち出せます。
 - ファイルの読み込みエラーが出た場合、原因を解消してから同じファイルの再選択か「プレビューを再読み込み」で再試行できます。
@@ -53,7 +55,7 @@
 
 ## 検証の結論と残る範囲
 
-最新のプレビュー修正でbuild・typecheck・lint成功、単体55・backend139・Electron E2E21の計215件PASS。終了コード・対象範囲とログは[26](26-preview-retry.md)に記載しています。CLI/TUI接続8・保存単独4件の直近の実行証拠は[24](24-package-inspection-report.md)で、今回変更していない範囲の単独検証は繰り返していません。[25](25-offline-review-demo.md)では専用デモの比較・照合・実クリップボード、通常表示と終了も検証しました。
+最新の根拠検索追加でbuild・typecheck・lint成功、単体55・backend139・Electron E2E23の計217件PASS。終了コード・対象範囲とログは[27](27-review-evidence-search.md)に記載しています。CLI/TUI接続8・保存単独4件の直近の実行証拠は[24](24-package-inspection-report.md)で、今回変更していない範囲の単独検証は繰り返していません。[25](25-offline-review-demo.md)では専用デモの比較・照合・実クリップボード、通常表示と終了も検証しました。
 
 別件として[17](17-workspace-dot-prefix.md)のCLI検証では`life-tools.test.ts`のworkerが終了コード`3221226505`で異常終了しました。該当テスト単独と正式CLI検証の再実行は成功していますが、native異常終了は未解決です。今回のRPC形式検証によって解消したとは扱いません。
 
