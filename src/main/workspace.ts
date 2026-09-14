@@ -77,7 +77,7 @@ export class Workspace {
     const target = await realpath(this.relativePath(relative))
     const root = await realpath(this.root)
     const relation = path.relative(root, target)
-    if (relation.startsWith('..') || path.isAbsolute(relation)) throw new Error(`プロジェクト外のファイルです: ${relative}`)
+    if (relation === '..' || relation.startsWith(`..${path.sep}`) || path.isAbsolute(relation)) throw new Error(`プロジェクト外のファイルです: ${relative}`)
     return target
   }
 
@@ -109,13 +109,13 @@ export class Workspace {
           continue
         }
         const relation = path.relative(root, resolved)
-        if (relation.startsWith('..') || path.isAbsolute(relation)) throw new Error(`プロジェクト外へ保存できません: ${relative}`)
+        if (relation === '..' || relation.startsWith(`..${path.sep}`) || path.isAbsolute(relation)) throw new Error(`プロジェクト外へ保存できません: ${relative}`)
         break
       }
       await mkdir(path.dirname(target), { recursive: true })
       const parent = await realpath(path.dirname(target))
       const relation = path.relative(root, parent)
-      if (relation.startsWith('..') || path.isAbsolute(relation)) throw new Error(`プロジェクト外へ保存できません: ${relative}`)
+      if (relation === '..' || relation.startsWith(`..${path.sep}`) || path.isAbsolute(relation)) throw new Error(`プロジェクト外へ保存できません: ${relative}`)
       const temporary = `${target}.${randomUUID()}.tmp`
       await writeFile(temporary, content, { flag: 'wx' })
       await publishFile(temporary, target)

@@ -93,6 +93,16 @@ describe('Disk workspace', () => {
     }
   })
 
+  it.each(['..notes.md', '..draft/review.md'])('supports the contained filename %s across file operations', async relative => {
+    const store = await setup(true)
+    await store.write(relative, 'first')
+    expect(await store.read(relative)).toBe('first')
+    await store.write(relative, 'updated')
+    await store.append(relative, '\nappended')
+    expect(await store.preview(relative)).toMatchObject({ path: relative, kind: 'text', content: 'updated\nappended', hash: digest('updated\nappended') })
+    expect((await store.tree()).some(entry => entry.name === relative.split('/')[0])).toBe(true)
+  })
+
   it('rejects external directory links before creating missing descendants and keeps the write queue usable', async () => {
     const store = await setup(true)
     const outside = await mkdtemp(path.resolve('.local/tests/workspace-outside-'))
@@ -103,6 +113,9 @@ describe('Disk workspace', () => {
     expect(await readdir(outside)).toEqual(['sentinel.txt'])
     expect(await readFile(path.join(outside, 'sentinel.txt'), 'utf8')).toBe('unchanged')
     await expect(store.write('artifacts/linked/sentinel.txt', 'overwritten')).rejects.toThrow('プロジェクト外へ保存できません')
+    await expect(store.read('artifacts/linked/sentinel.txt')).rejects.toThrow('プロジェクト外のファイル')
+    await expect(store.preview('artifacts/linked/sentinel.txt')).rejects.toThrow('プロジェクト外のファイル')
+    await expect(store.append('artifacts/linked/sentinel.txt', 'appended')).rejects.toThrow('プロジェクト外のファイル')
     expect(await readFile(path.join(outside, 'sentinel.txt'), 'utf8')).toBe('unchanged')
     await store.write('artifacts/local/nested/review.json', 'local')
     expect(await store.read('artifacts/local/nested/review.json')).toBe('local')
