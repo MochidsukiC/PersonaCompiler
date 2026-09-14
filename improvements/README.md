@@ -33,7 +33,8 @@
 | `91b7556` | 根拠資料の本文・題名・IDから、その資料を参照するNPC設定を逆引き | [27](27-review-evidence-search.md) |
 | `90ae325` | DEV検証が保存前のチェックポイントを取得して失敗する競合を修正 | [28](28-dev-checkpoint-test-wait.md) |
 | `96cf331` | App Server起動確認のHTTP応答本文を解放し、キャンセル失敗を明示 | [29](29-readiness-response-cleanup.md) |
-| `git log --oneline -- improvements/30-relay-disconnected-ack.md`で確認 | 端末切断で返答不明になったCLI要求について、終了時の30秒待ちを即時エラーへ変更 | [30](30-relay-disconnected-ack.md) |
+| `0d329d5` | 端末切断で返答不明になったCLI要求について、終了時の30秒待ちを即時エラーへ変更 | [30](30-relay-disconnected-ack.md) |
+| `git log --oneline -- improvements/31-review-evidence-navigation.md`で確認 | 制作レビューで同じ根拠を再選択したときも、資料の位置へ移動するよう修正 | [31](31-review-evidence-navigation.md) |
 
 各コミットの直後に差分の自己レビューを実施しました。機能ごとに取り消す場合は、作業ツリーの変更を確認したうえで`git revert <commit>`を使えます。全体を戻す場合は表の下から上の順にrevertしてください。
 
@@ -58,7 +59,7 @@
 
 ## 検証の結論と残る範囲
 
-最新の端末切断時の返答待ち修正でbuild・typecheck・lint成功、単体55・backend145・CLI/TUI接続8・保存4・Electron E2E23の計235件PASS。終了コード・対象範囲とログは[30](30-relay-disconnected-ack.md)に記載しています。途中で見つかったDEV検証の保存完了待ちの競合も[28](28-dev-checkpoint-test-wait.md)で修正済みです。[25](25-offline-review-demo.md)では専用デモの比較・照合・実クリップボード、通常表示と終了も検証しました。
+最新の根拠再選択の画面修正でbuild・typecheck・lint成功、単体55・backend145・Electron E2E25の計225件PASS。終了コード・対象範囲とログは[31](31-review-evidence-navigation.md)に記載しています。今回は変更していないCLI接続・保存処理については、直前の[30](30-relay-disconnected-ack.md)でCLI/TUI接続8・保存4件も成功しています。途中で見つかったDEV検証の保存完了待ちの競合も[28](28-dev-checkpoint-test-wait.md)で修正済みです。[25](25-offline-review-demo.md)では専用デモの比較・照合・実クリップボード、通常表示と終了も検証しました。
 
 別件として[17](17-workspace-dot-prefix.md)のCLI検証では`life-tools.test.ts`のworkerが終了コード`3221226505`で異常終了しました。該当テスト単独と正式CLI検証の再実行は成功していますが、native異常終了は未解決です。今回のRPC形式検証によって解消したとは扱いません。
 
