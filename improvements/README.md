@@ -22,7 +22,8 @@
 | `a947775` | 外部リンク経由の保存拒否時に、ワールド外へ空ディレクトリを作る不具合を修正 | [16](16-workspace-write-boundary.md) |
 | `750f852` | `..notes.md`等の正当な名前をワールド外と誤判定する不具合を修正 | [17](17-workspace-dot-prefix.md) |
 | `d27e9c3` | native例外のコード・stack・dumpを採取する診断手段。異常終了自体は未解決 | [18](18-native-crash-diagnostics.md) |
-| `git log --oneline -- improvements/19-terminal-rpc-envelope.md`で確認 | 不正なRPC受信による端末中継の未処理例外を修正 | [19](19-terminal-rpc-envelope.md) |
+| `b68953d` | 不正なRPC受信による端末中継の未処理例外を修正 | [19](19-terminal-rpc-envelope.md) |
+| `git log --oneline -- improvements/20-rpc-failed-connection.md`で確認 | RPCの異常受信後に接続が残り、後続処理が動く不具合を修正 | [20](20-rpc-failed-connection.md) |
 
 各コミットの直後に差分の自己レビューを実施しました。機能ごとに取り消す場合は、作業ツリーの変更を確認したうえで`git revert <commit>`を使えます。全体を戻す場合は表の下から上の順にrevertしてください。
 
@@ -42,7 +43,7 @@
 
 ## 検証の結論と残る範囲
 
-最終ソースでbuild・typecheck・lint成功、単体53・backend131・CLI/TUI接続8・保存4・Electron E2E18の計214件PASS。最新の終了コードとログは[19](19-terminal-rpc-envelope.md)に記載しています。不正なRPCを受信した際の未処理TypeErrorは両方向で再現し、修正しました。
+最終ソースでbuild・typecheck・lint成功、単体53・backend133・CLI/TUI接続8・保存4・Electron E2E18の計216件PASS。最新の終了コードとログは[20](20-rpc-failed-connection.md)に記載しています。不正なRPCを受信した際の未処理TypeErrorは両方向で再現し、修正しました。さらにRPCクライアントの異常受信後にも接続と後続処理が残る不具合を修正し、明示的な再接続での復帰を検証しました。
 
 別件として[17](17-workspace-dot-prefix.md)のCLI検証では`life-tools.test.ts`のworkerが終了コード`3221226505`で異常終了しました。該当テスト単独と正式CLI検証の再実行は成功していますが、native異常終了は未解決です。今回のRPC形式検証によって解消したとは扱いません。
 

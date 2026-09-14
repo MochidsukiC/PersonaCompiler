@@ -2,6 +2,42 @@ import { expect, it } from 'vitest'
 import { WebSocketServer } from 'ws'
 import { RpcClient } from '../../src/backend/rpc'
 
+it.each(['null', '{broken'])('disconnects on invalid RPC %s and ignores subsequent messages until explicit reconnect', async invalid => {
+  const server = new WebSocketServer({ host: '127.0.0.1', port: 0 })
+  await new Promise<void>(resolve => server.once('listening', resolve))
+  const address = server.address()
+  if (!address || typeof address === 'string') throw new Error('No fixture address')
+  const methods: string[] = [], notifications: string[] = [], toolRequests: string[] = [], failures: Error[] = []
+  server.on('connection', socket => socket.on('message', bytes => {
+    const message = JSON.parse(bytes.toString())
+    if (message.id === undefined) return
+    methods.push(message.method)
+    if (message.method === 'invalid-reply') {
+      socket.send(invalid)
+      socket.send(JSON.stringify({ method: 'late/notification', params: {} }))
+      socket.send(JSON.stringify({ id: 'late-tool', method: 'item/tool/call', params: {} }))
+      return
+    }
+    socket.send(JSON.stringify({ id: message.id, result: message.method }))
+  }))
+  const client = new RpcClient(event => notifications.push(event.method), error => failures.push(error), async method => { toolRequests.push(method); return {} })
+  try {
+    const endpoint = `ws://127.0.0.1:${address.port}`
+    await client.connect(endpoint, 'fixture-token')
+    await expect(client.request('invalid-reply')).rejects.toThrow('不正なRPC')
+    await expect.poll(() => server.clients.size, { timeout: 1000 }).toBe(0)
+    expect(notifications).toEqual([])
+    expect(toolRequests).toEqual([])
+    expect(failures).toHaveLength(1)
+    expect(failures[0].cause).toBeInstanceOf(Error)
+    await expect(client.request('after-failure')).rejects.toThrow('接続されていません')
+    expect(methods).not.toContain('after-failure')
+    await client.connect(endpoint, 'fixture-token')
+    expect(await client.request('after-reconnect')).toBe('after-reconnect')
+    expect(failures).toHaveLength(1)
+  } finally { client.close(); for (const socket of server.clients) socket.terminate(); await new Promise<void>(resolve => server.close(() => resolve())) }
+})
+
 it('correlates RPC, sends capability authentication, redacts login errors and rejects lost responses', async () => {
   const server = new WebSocketServer({ host: '127.0.0.1', port: 0 })
   await new Promise<void>(resolve => server.once('listening', resolve))

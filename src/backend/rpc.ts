@@ -20,6 +20,7 @@ export class RpcClient {
     const socket = new WebSocket(url, { headers: { Authorization: `Bearer ${token}` }, handshakeTimeout: 10000 })
     this.socket = socket
     socket.on('message', data => {
+      if (this.socket !== socket) return
       let parsed: z.infer<typeof envelopeSchema>
       try { parsed = envelopeSchema.parse(JSON.parse(data.toString())) }
       catch (error) { this.fail(new Error('Codexから不正なRPCメッセージを受信しました', { cause: error })); return }
@@ -52,8 +53,8 @@ export class RpcClient {
         else pending.resolve(parsed.result)
       }
     })
-    socket.on('error', error => this.fail(error))
-    socket.on('close', () => { if (!this.closing) this.fail(new Error('Codex App Serverとの接続が切断されました')) })
+    socket.on('error', error => { if (this.socket === socket) this.fail(error) })
+    socket.on('close', () => { if (this.socket === socket && !this.closing) this.fail(new Error('Codex App Serverとの接続が切断されました')) })
     await new Promise<void>((resolve, reject) => { socket.once('open', resolve); socket.once('error', reject) })
     await this.request('initialize', { clientInfo: { name: 'persona_compiler', version: '0.1.0' }, capabilities: { experimentalApi: true } })
     socket.send(JSON.stringify({ method: 'initialized' }))
@@ -73,6 +74,9 @@ export class RpcClient {
   }
 
   private fail(error: Error): void {
+    const socket = this.socket
+    this.socket = null
+    socket?.terminate()
     for (const p of this.pending.values()) { clearTimeout(p.timer); p.reject(error) }
     this.pending.clear()
     if (!this.closing) this.failed(error)
@@ -80,6 +84,5 @@ export class RpcClient {
   close(): void {
     this.closing = true
     this.fail(new Error('Codex接続を終了しました'))
-    this.socket?.terminate(); this.socket = null
   }
 }
