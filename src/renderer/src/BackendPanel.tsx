@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react'
 import type { AgentModelSettings, BackendCommand, BackendSnapshot, ModelInfo, QuestionRound } from '../../core/contracts'
 import { autoModels, resolveEffort, supportedEfforts, validateSettings } from '../../core/models'
 import { allocateCounts } from '../../core/population'
+import { endReasonLabels } from './lifecycle-labels'
 
 export function BackendPanel({ view, onError }: { view: BackendSnapshot; onError: (error: unknown) => void }) {
   const [pending, setPending] = useState(false)
@@ -24,7 +25,9 @@ export function BackendPanel({ view, onError }: { view: BackendSnapshot; onError
   if (view.simulation && p.phase === 'ready' && view.authenticated && view.connection === 'connected') {
     const simulation = view.simulation
     const recent = simulation.events.slice(-20).reverse()
-    return <div className="backend-panel life-summary"><div className="backend-heading"><strong>{simulation.stage === 'ready' ? '初期ワールドの準備完了' : simulation.stage === 'ended' ? 'ターン上限に到達しました' : '住民の自律生活'}</strong><span>{simulation.actors.length}人 · {simulation.facilities.reduce((n, f) => n + (f.layout?.homes.length ?? 0), 0)}軒の家</span></div><details className="backend-section"><summary>最近の出来事・保存済み設定</summary><p>親: {view.settings?.parent.modelId} · 施設: {view.settings?.facility.modelId} · NPC: {view.settings?.npc.model.mode === 'auto' ? 'Auto（先天的モデル）' : view.settings?.npc.model.modelId}</p><p>初期状態はturn=0です。実行中も端末へ誘導メッセージを入力できます。</p>{recent.map(e => <p key={e.sequence}><small>Turn {e.turn} · {simulation.actors.find(a => a.id === e.actorId)?.name}</small> {e.text}</p>)}</details></div>
+    const endReason = simulation.lifecycle?.endReason
+    const heading = simulation.stage === 'ready' ? '初期ワールドの準備完了' : simulation.stage === 'ended' ? endReason ? endReasonLabels[endReason] : 'シミュレーションが終了しました' : '住民の自律生活'
+    return <div className="backend-panel life-summary"><div className="backend-heading"><strong>{heading}</strong><span>{simulation.actors.length}人 · {simulation.facilities.reduce((n, f) => n + (f.layout?.homes.length ?? 0), 0)}軒の家</span></div><details className="backend-section"><summary>最近の出来事・保存済み設定</summary><p>親: {view.settings?.parent.modelId} · 施設: {view.settings?.facility.modelId} · NPC: {view.settings?.npc.model.mode === 'auto' ? 'Auto（先天的モデル）' : view.settings?.npc.model.modelId}</p><p>初期状態はturn=0です。実行中も端末へ誘導メッセージを入力できます。</p>{recent.map(e => <p key={e.sequence}><small>Turn {e.turn} · {simulation.actors.find(a => a.id === e.actorId)?.name}</small> {e.text}</p>)}</details></div>
   }
   return <div className={`backend-panel ${draft ? 'with-map' : ''}`}>
     <div className="backend-heading"><strong>{p.phase === 'idle' ? '接続とモデル設定' : p.phase === 'interview' ? '世界のヒアリング' : p.phase === 'review' ? `仕様レビュー · revision ${p.revision}` : p.phase === 'ready' ? '初期ワールドの準備完了' : '初期人口・施設を生成中'}</strong><span>{view.connection === 'connected' ? view.authenticated ? '認証済み' : '認証待ち' : '未接続'}</span></div>

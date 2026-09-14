@@ -38,7 +38,8 @@
 | `58c1bc7` | 検索した設定と全根拠を、検索条件・元資料のhash付きでMarkdownとJSONへコピー | [32](32-review-search-report.md) |
 | `978500d` | 結果のない不正なRPC応答で要求が完了扱いになる不具合を修正 | [33](33-rpc-response-validation.md) |
 | `c44b389` | 全画面検証を追跡できるようnative診断の期限を明示指定可能に変更 | [34](34-native-diagnostic-deadline.md) |
-| `git log --oneline -- improvements/35-review-comparison-index.md`で確認 | 根拠と設定を索引化し、制作レビュー比較で繰り返していた計算を削減 | [35](35-review-comparison-index.md) |
+| `2e1a6b3` | 根拠と設定を索引化し、制作レビュー比較で繰り返していた計算を削減 | [35](35-review-comparison-index.md) |
+| `git log --oneline -- improvements/36-simulation-end-reason.md`で確認 | ターン上限以外の終了も上限到達と表示する不具合を修正 | [36](36-simulation-end-reason.md) |
 
 各コミットの直後に差分の自己レビューを実施しました。機能ごとに取り消す場合は、作業ツリーの変更を確認したうえで`git revert <commit>`を使えます。全体を戻す場合は表の下から上の順にrevertしてください。
 
@@ -64,7 +65,7 @@
 
 ## 検証の結論と残る範囲
 
-最新の制作レビュー比較の索引化でbuild・typecheck・lint成功、単体63・backend154・Electron E2E27の計244件PASSを確認しました。条件を明記した比較計算の処理時間と、検証ログは[35](35-review-comparison-index.md)に記載しています。今回は変更していないCLI接続・保存処理は[33](33-rpc-response-validation.md)で8件・4件も成功しています。ただし[33](33-rpc-response-validation.md)の初回E2EではPlaywright workerが`3221226505`で異常終了し、26件PASS・1件FAILでした。直前と該当の4件はnative診断配下で成功、通常の全体再実行も成功しましたが、この異常終了は未解決です。途中で見つかったDEV検証の保存完了待ちの競合は[28](28-dev-checkpoint-test-wait.md)で修正済みです。[25](25-offline-review-demo.md)では専用デモの比較・照合・実クリップボード、通常表示と終了も検証しました。
+最新の終了理由表示の修正でbuild・typecheck・lint成功、単体63・backend154・Electron E2E28の計245件PASSを確認しました。検証ログは[36](36-simulation-end-reason.md)に記載しています。制作レビュー比較の処理時間改善は、測定条件とともに[35](35-review-comparison-index.md)へ記録しています。今回は変更していないCLI接続・保存処理は[33](33-rpc-response-validation.md)で8件・4件も成功しています。ただし[33](33-rpc-response-validation.md)の初回E2EではPlaywright workerが`3221226505`で異常終了し、26件PASS・1件FAILでした。直前と該当の4件はnative診断配下で成功、通常の全体再実行も成功しましたが、この異常終了は未解決です。途中で見つかったDEV検証の保存完了待ちの競合は[28](28-dev-checkpoint-test-wait.md)で修正済みです。[25](25-offline-review-demo.md)では専用デモの比較・照合・実クリップボード、通常表示と終了も検証しました。
 
 [34](34-native-diagnostic-deadline.md)で診断期限を明示指定できるようにし、全27件の画面検証をnative診断配下でも最後まで実行しました。3.7分で全件PASS・例外採取0・期限超過0でした。これは診断手段の拡張と検証記録であり、異常終了を解消したという変更ではありません。
 
