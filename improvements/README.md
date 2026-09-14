@@ -41,7 +41,8 @@
 | `2e1a6b3` | 根拠と設定を索引化し、制作レビュー比較で繰り返していた計算を削減 | [35](35-review-comparison-index.md) |
 | `c5ccc9c` | ターン上限以外の終了も上限到達と表示する不具合を修正 | [36](36-simulation-end-reason.md) |
 | `3f6b530` | パッケージの全登録ファイルを比較し、追加・削除・内容変更・欠損をレポート化 | [37](37-package-file-comparison.md) |
-| `git log --oneline -- improvements/38-production-pause-boundary.md`で確認 | 入力保存中に停止した親の制作処理を、保存後に新たに開始する競合を修正 | [38](38-production-pause-boundary.md) |
+| `a0dcb20` | 入力保存中に停止した親の制作処理を、保存後に新たに開始する競合を修正 | [38](38-production-pause-boundary.md) |
+| `git log --oneline -- improvements/39-production-late-start-interrupt.md`で確認 | 停止後に開始応答が届いた親の制作処理を中断し、先に完了した成果物は保持 | [39](39-production-late-start-interrupt.md) |
 
 各コミットの直後に差分の自己レビューを実施しました。機能ごとに取り消す場合は、作業ツリーの変更を確認したうえで`git revert <commit>`を使えます。全体を戻す場合は表の下から上の順にrevertしてください。
 
@@ -68,7 +69,7 @@
 
 ## 検証の結論と残る範囲
 
-最新の制作開始前の停止チェック修正でbuild・typecheck・lint成功、単体68・backend157・Electron E2E30・実CLI接続8・保存4の計267件PASSを確認しました。再現条件と検証ログは[38](38-production-pause-boundary.md)に記載しています。パッケージのファイル比較とスクロール修正は[37](37-package-file-comparison.md)に記録しています。制作レビュー比較の処理時間改善は、測定条件とともに[35](35-review-comparison-index.md)へ記録しています。ただし[33](33-rpc-response-validation.md)の初回E2EではPlaywright workerが`3221226505`で異常終了し、26件PASS・1件FAILでした。直前と該当の4件はnative診断配下で成功、通常の全体再実行も成功しましたが、この異常終了は未解決です。途中で見つかったDEV検証の保存完了待ちの競合は[28](28-dev-checkpoint-test-wait.md)で修正済みです。[25](25-offline-review-demo.md)では専用デモの比較・照合・実クリップボード、通常表示と終了も検証しました。
+最新の親の遅延開始応答の中断修正でbuild・typecheck・lint成功、単体68・backend166・Electron E2E30・実CLI接続8・保存4の計276件PASSを確認しました。ただし初回のnpm testではRPCテストのworkerが3221226505で異常終了しました。RPC単独7件・backend全166件はnative診断下で成功し、通常の全体再実行も成功しましたが、この異常終了は未解決です。再現条件・失敗ログ・最終検証は[39](39-production-late-start-interrupt.md)に記録しています。開始前の停止境界の修正は[38](38-production-pause-boundary.md)です。パッケージのファイル比較とスクロール修正は[37](37-package-file-comparison.md)に記録しています。制作レビュー比較の処理時間改善は、測定条件とともに[35](35-review-comparison-index.md)へ記録しています。ただし[33](33-rpc-response-validation.md)の初回E2EではPlaywright workerが`3221226505`で異常終了し、26件PASS・1件FAILでした。直前と該当の4件はnative診断配下で成功、通常の全体再実行も成功しましたが、この異常終了は未解決です。途中で見つかったDEV検証の保存完了待ちの競合は[28](28-dev-checkpoint-test-wait.md)で修正済みです。[25](25-offline-review-demo.md)では専用デモの比較・照合・実クリップボード、通常表示と終了も検証しました。
 
 [34](34-native-diagnostic-deadline.md)で診断期限を明示指定できるようにし、全27件の画面検証をnative診断配下でも最後まで実行しました。3.7分で全件PASS・例外採取0・期限超過0でした。これは診断手段の拡張と検証記録であり、異常終了を解消したという変更ではありません。
 

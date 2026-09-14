@@ -540,7 +540,7 @@ export class BackendEngine {
     }, async operation => { this.production = structuredClone(operation); this.runtime.setThreadPolicy?.(this.parent(), ['requested', 'running', 'uncertain'].includes(operation.status)); await this.persist(); await this.persistence?.flush() }, () => {
       this.writable(); this.ensureConnected()
       if (this.stopRequested) throw new Error('停止中のため制作処理を開始できません')
-    })
+    }, () => this.stopRequested)
     return this.producer
   }
   private async generateBirth(birth: Birth, parents: Resident[], turn: number): Promise<NpcInitialization> {

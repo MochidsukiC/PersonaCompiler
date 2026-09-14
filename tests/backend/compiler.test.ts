@@ -231,7 +231,7 @@ it.each((['birth', 'compile'] as const).flatMap(kind => (['before', 'during'] as
   const producer = new ParentProduction(runtime, engine.workspace, () => binding, async () => undefined, async operation => {
     operations.push(structuredClone(operation))
     if (phase === 'before' && operation.status === 'requested') await engine.workspace.write(`${path.posix.dirname(operation.output)}/input.json`, JSON.stringify({ marker: 'changed-before-send' }))
-  }, () => undefined)
+  }, () => undefined, () => false)
   runtime.startTurn = async (parent, text) => {
     sends++
     const relative = text.match(/入力資料: (production\/[a-f0-9-]+\/input.json)/)![1]
@@ -260,7 +260,7 @@ it('records a lost parent response without automatically sending it again', asyn
     let sends = 0
     runtime.startTurn = async () => { sends++; throw new Error('response lost') }
     const operations: ProductionOperation[] = []
-    const producer = new ParentProduction(runtime, workspace, () => binding, async () => undefined, async op => { operations.push(structuredClone(op)) }, () => undefined)
+    const producer = new ParentProduction(runtime, workspace, () => binding, async () => undefined, async op => { operations.push(structuredClone(op)) }, () => undefined, () => false)
     await expect(producer.generate('birth', 'birth-1', 'test', {})).rejects.toThrow('response lost')
     expect(sends).toBe(1)
     expect(operations.at(-1)).toMatchObject({ status: 'uncertain', turnId: null })
@@ -302,7 +302,7 @@ it.each(['birth', 'compile'] as const)('rechecks permission before sending %s af
   const producer = new ParentProduction(runtime, engine.workspace, () => binding, async () => { beforeCalls++ }, async operation => {
     operations.push(structuredClone(operation))
     if (revoke && operation.status === 'requested') blocked = true
-  }, () => { if (blocked) throw new Error('fixture: stopped') })
+  }, () => { if (blocked) throw new Error('fixture: stopped') }, () => blocked)
   runtime.startTurn = async (parent, text) => {
     sends++
     const relative = text.match(/出力先: (production\/[a-f0-9-]+\/result.json)/)![1]
@@ -323,6 +323,75 @@ it.each(['birth', 'compile'] as const)('rechecks permission before sending %s af
     expect(await producer.generate(kind, 'next', 'fixture', {})).toEqual({ value: 'next' })
     expect(sends).toBe(1)
     expect(operations.at(-1)).toMatchObject({ targetId: 'next', status: 'completed', error: null })
+  } finally { await engine.close() }
+})
+it('interrupts parent compilation when its start response arrives after pause', async () => {
+  const { runtime, engine } = await setup()
+  let release!: () => void, reached!: () => void
+  const held = new Promise<void>(resolve => { release = resolve })
+  const starting = new Promise<void>(resolve => { reached = resolve })
+  const turnId = crypto.randomUUID(), interrupted: string[] = []
+  const interrupt = runtime.interrupt.bind(runtime)
+  runtime.startTurn = async binding => {
+    if (binding.role !== 'parent') throw new Error('Unexpected non-parent start')
+    reached(); await held
+    runtime.emit({ method: 'turn/started', params: { threadId: binding.threadId, turn: { id: turnId } } })
+    return turnId
+  }
+  runtime.interrupt = async (threadId, id) => { interrupted.push(id); await interrupt(threadId, id) }
+  try {
+    await engine.backendCommand({ type: 'connect', authMode: 'chatgpt' })
+    await starting
+    await engine.pause()
+    expect(interrupted).toEqual([])
+    release()
+    await expect.poll(() => interrupted, { timeout: 2000 }).toEqual([turnId])
+    await expect.poll(() => engine.backendStatus().compilation?.status).toBe('pending')
+    expect(engine.backendStatus().compilation!.tasks[0]).toMatchObject({ status: 'failed', error: expect.stringContaining('interrupted') })
+  } finally {
+    release()
+    await interrupt('thread-parent', turnId)
+    await engine.close()
+  }
+})
+it.each((['birth', 'compile'] as const).flatMap(kind => (['running', 'completed-before-reply', 'completed-during-save', 'interrupt-failed'] as const).map(outcome => ({ kind, outcome }))))('handles stopped $kind start responses with $outcome without discarding completed results', async ({ kind, outcome }) => {
+  const { runtime, engine } = await setup()
+  const binding = engine.backendStatus().preparation.sessions.find(session => session.role === 'parent')!
+  const operations: ProductionOperation[] = []
+  const listeners = runtime.listeners.size, turnId = crypto.randomUUID()
+  let stopped = false, sends = 0, interruptions = 0
+  const finish = (id: string, status: string) => runtime.emit({ method: 'turn/completed', params: { threadId: binding.threadId, turn: { id, status } } })
+  const producer = new ParentProduction(runtime, engine.workspace, () => binding, async () => undefined, async operation => {
+    operations.push(structuredClone(operation))
+    if (operation.status === 'running' && outcome === 'completed-during-save') finish(turnId, 'completed')
+  }, () => { if (stopped) throw new Error('fixture: stopped before request') }, () => stopped)
+  runtime.startTurn = async (parent, text) => {
+    sends++; stopped = true
+    const relative = text.match(/出力先: (production\/[a-f0-9-]+\/result.json)/)![1]
+    await writeFile(path.join(parent.cwd, relative), JSON.stringify({ result: 'already-completed' }))
+    finish('unrelated-earlier-turn', 'completed')
+    if (outcome === 'completed-before-reply') finish(turnId, 'completed')
+    return turnId
+  }
+  runtime.interrupt = async (threadId, id) => {
+    expect(threadId).toBe(binding.threadId); expect(id).toBe(turnId)
+    interruptions++
+    if (outcome === 'interrupt-failed') throw new Error('fixture: interrupt acknowledgement lost')
+    finish(id, 'interrupted')
+  }
+  try {
+    const request = producer.generate(kind, 'target', 'fixture', {})
+    if (outcome.startsWith('completed-')) {
+      await expect(request).resolves.toEqual({ result: 'already-completed' })
+      expect(interruptions).toBe(0)
+      expect(operations.at(-1)).toMatchObject({ status: 'completed', turnId, error: null })
+    } else {
+      await expect(request).rejects.toThrow(outcome === 'running' ? 'interrupted' : 'acknowledgement lost')
+      expect(interruptions).toBe(1)
+      expect(operations.at(-1)).toMatchObject({ status: outcome === 'running' ? 'failed' : 'uncertain', turnId })
+    }
+    expect(sends).toBe(1)
+    expect(runtime.listeners.size).toBe(listeners)
   } finally { await engine.close() }
 })
 it('requires selected relationships to retain their exact supporting memory revisions in the exported package', () => {
