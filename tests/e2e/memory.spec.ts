@@ -54,6 +54,44 @@ test('shows NPC memory details and directed historical relationship evidence in 
     await relation.locator('.evidence').click()
     await expect(relation.getByText('楓が本を貸してくれた。', { exact: true })).toBeVisible()
     await page.screenshot({ path: test.info().outputPath('memory-relationship.png') })
+    const updateRelation = async (revision: number, label: string) => {
+      const snapshot = await page.evaluate(() => window.persona.snapshot())
+      await app.evaluate(({ ipcMain, BrowserWindow }, fixture) => {
+        const current = fixture.snapshot.state.relationships!.relations[0]
+        current.label = fixture.label
+        current.observedTurn = fixture.revision + 4
+        current.evidence = [{ ownerId: 'npc0', memoryId: fixture.memoryId, revision: fixture.revision }]
+        fixture.snapshot.version++
+        ipcMain.removeHandler('persona:snapshot')
+        ipcMain.handle('persona:snapshot', () => fixture.snapshot)
+        BrowserWindow.getAllWindows()[0].webContents.send('persona:event', { type: 'workspace', snapshot: fixture.snapshot })
+      }, { snapshot, revision, label, memoryId: record.id })
+      await expect(relation.locator('.relation-label')).toHaveText(label)
+    }
+    await updateRelation(1, '同じ記憶を参照した説明の更新')
+    await expect(relation.getByTestId('memory-detail')).toContainText('楓の本を借りた')
+    await updateRelation(2, '更新された記憶で見た相手')
+    await expect(relation.getByTestId('memory-detail')).toHaveCount(0)
+    await app.evaluate(({ ipcMain }, fixture) => {
+      ipcMain.removeHandler('persona:memory-detail')
+      ipcMain.handle('persona:memory-detail', (_event, ownerId, id, revision) => {
+        if (ownerId !== 'npc0' || id !== fixture.record.id) throw new Error('fixture: wrong memory reference')
+        if (revision === 2) return new Promise(resolve => { ipcMain.once('fixture:release-memory', () => resolve({ ...fixture, record: { ...fixture.record, revision: 2, text: '遅れて届いた古い根拠' } })) })
+        if (revision === 3) return { ...fixture, record: { ...fixture.record, revision: 3, text: '現在の関係が参照する記憶' } }
+        throw new Error(`fixture: unexpected revision ${revision}`)
+      })
+    }, detail)
+    await relation.locator('.evidence').click()
+    await expect(relation.getByText('記憶を読み込み中…', { exact: true })).toBeVisible()
+    await expect.poll(() => app.evaluate(({ ipcMain }) => ipcMain.listenerCount('fixture:release-memory'))).toBe(1)
+    await updateRelation(3, 'さらに更新された関係')
+    await expect(relation.getByText('記憶を読み込み中…', { exact: true })).toHaveCount(0)
+    expect(await app.evaluate(({ ipcMain }) => ipcMain.emit('fixture:release-memory'))).toBe(true)
+    await relation.locator('.evidence').click()
+    await expect(relation.getByTestId('memory-detail')).toContainText('現在の関係が参照する記憶')
+    await expect(relation).not.toContainText('遅れて届いた古い根拠')
+    await expect(relation).not.toContainText('楓の本を借りた')
+    await page.screenshot({ path: test.info().outputPath('memory-relationship-updated.png') })
     expect(errors).toEqual([])
   } finally { await app.close() }
 })

@@ -97,12 +97,13 @@ export const WorldView = memo(function WorldView({ state, mode, onAgent, staleRe
 
 function RelationDetail({ relation, snapshot, agents, stale, onFile, onClose }: { relation: RelationshipSnapshot['relations'][number]; snapshot: RelationshipSnapshot; agents: AgentDescriptor[]; stale: boolean; onFile: (path: string) => void; onClose: () => void }) {
   const [selected, setSelected] = useState<{ ownerId: string; memoryId: string; revision: number } | null>(null)
+  const selectedEvidence = selected && relation.evidence.some(evidence => 'memoryId' in evidence && evidence.ownerId === selected.ownerId && evidence.memoryId === selected.memoryId && evidence.revision === selected.revision) ? selected : null
   const memory = relation.evidence.some(e => 'memoryId' in e)
   return <div className="relation-detail" data-testid="relation-detail"><button className="icon-button close-detail" onClick={onClose} aria-label="関係の詳細を閉じる"><X size={14} /></button><span className="eyebrow">SUBJECTIVE RELATIONSHIP</span><h3>{agents.find(a => a.id === relation.source)?.name} → {agents.find(a => a.id === relation.target)?.name}</h3><span className="relation-label">{relation.label}</span><p>{relation.description}</p>
     <small>{memory ? `本人が turn ${relation.observedTurn} に更新` : `Day ${snapshot.day} / ${new Date(snapshot.observedAt).toLocaleTimeString('ja-JP')} 観測`}</small>
     {stale && <div className="stale-label">観測後に根拠ファイルが変更されています</div>}<div className="evidence-label">{memory ? '当時の記憶を確認' : '根拠の記憶ファイル'}</div>
     {relation.evidence.map(evidence => 'path' in evidence ? <button className="evidence" key={evidence.path} onClick={() => onFile(evidence.path)}><FileText size={13} />{evidence.path}<ArrowUpRight size={13} /></button> : <button className="evidence" key={`${evidence.memoryId}/${evidence.revision}`} onClick={() => setSelected(evidence)}><FileText size={13} />{evidence.memoryId} · v{evidence.revision}<ArrowUpRight size={13} /></button>)}
-    {selected && <MemoryEvidence key={`${selected.ownerId}/${selected.memoryId}/${selected.revision}`} {...selected} />}
+    {selectedEvidence && <MemoryEvidence key={`${selectedEvidence.ownerId}/${selectedEvidence.memoryId}/${selectedEvidence.revision}`} {...selectedEvidence} />}
     {!memory && <small className="demo-explanation">デモの関係ラベルです。任意の記憶の意味抽出は未接続です。</small>}
   </div>
 }

@@ -46,7 +46,8 @@
 | `5c6152e` | backend workerの最後のテスト段階・PIDを任意の診断設定で同期記録 | [40](40-backend-worker-stages.md) |
 | `471e087` | 大きな成果物を分割読み込みし、ファイル全量の保持による照合時のメモリ増加を削減 | [41](41-package-streaming-hash.md) |
 | `a66ba3f` | 制作レビューに同名の区分があると検索対象外の設定が画面に残る不具合を修正 | [42](42-review-duplicate-sections.md) |
-| `git log --oneline -- improvements/43-full-review-export.md`で確認 | 読み込み済みの全設定・全根拠・指針・Runtime Promptを元資料のhash付きでコピー | [43](43-full-review-export.md) |
+| `9c4510f` | 読み込み済みの全設定・全根拠・指針・Runtime Promptを元資料のhash付きでコピー | [43](43-full-review-export.md) |
+| `git log --oneline -- improvements/44-current-relation-evidence.md`で確認 | 関係の根拠が更新された後、新しい根拠一覧にない旧記憶が詳細に残る不具合を修正 | [44](44-current-relation-evidence.md) |
 
 各コミットの直後に差分の自己レビューを実施しました。機能ごとに取り消す場合は、作業ツリーの変更を確認したうえで`git revert <commit>`を使えます。全体を戻す場合は表の下から上の順にrevertしてください。
 
@@ -73,6 +74,8 @@
 - 実行済み検証のログとスクリーンショットは`.local/polish-20260914/`にあります。
 
 ## 検証の結論と残る範囲
+
+[44](44-current-relation-evidence.md)で、関係の根拠更新後に参照外の旧記憶が詳細に残る不具合を修正しました。ラベルだけの更新では表示を保持し、参照変更時は遅延した旧応答も除外します。build・typecheck・lint、最終の単体71・backend170・通常のElectron全34件の計275件が成功しました。ただし初回E2Eは比較候補の欠落で33件PASS・1件FAILでした。比較単独5回と全体再実行では再現せず、候補欠落の原因は未確定です。初回traceと診断手順をサマリーに残しています。過去のnative異常終了も未解決です。
 
 [43](43-full-review-export.md)で、読み込み済みの全設定・全根拠・指針・Runtime Promptを、元資料のhash・採取時刻付きでコピーできるようにしました。外部編集後の`review.json`と生成時の`review.md`の違いも案内します。build・typecheck・lint、単体71・backend170・通常のElectron全34件の計275件が成功し、認証不要デモで4種類のレポートも実クリップボードから照合しました。今回native異常終了は再発していませんが、過去の異常終了は未解決として残しています。
 
