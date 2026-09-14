@@ -49,7 +49,8 @@
 | `9c4510f` | 読み込み済みの全設定・全根拠・指針・Runtime Promptを元資料のhash付きでコピー | [43](43-full-review-export.md) |
 | `fb862fa` | 関係の根拠が更新された後、新しい根拠一覧にない旧記憶が詳細に残る不具合を修正 | [44](44-current-relation-evidence.md) |
 | `4476b63` | 比較候補の欠落時に、画面・候補・公開ファイル一覧・実ディスクのパスを保存 | [45](45-package-candidate-failure-evidence.md) |
-| `git log --oneline -- improvements/46-world-view-run-boundary.md`で確認 | 同じ施設IDを持つ別ワールドへ切り替えたとき、旧ワールドの施設選択・表示設定を初期化 | [46](46-world-view-run-boundary.md) |
+| `3747c75` | 同じ施設IDを持つ別ワールドへ切り替えたとき、旧ワールドの施設選択・表示設定を初期化 | [46](46-world-view-run-boundary.md) |
+| `git log --oneline -- improvements/47-workspace-watch-observations.md`で確認 | 比較候補欠落の監視経路を追加診断。正常時の通知記録・調査範囲・未解決事項を保存 | [47](47-workspace-watch-observations.md) |
 
 各コミットの直後に差分の自己レビューを実施しました。機能ごとに取り消す場合は、作業ツリーの変更を確認したうえで`git revert <commit>`を使えます。全体を戻す場合は表の下から上の順にrevertしてください。
 
@@ -76,6 +77,8 @@
 - 実行済み検証のログとスクリーンショットは`.local/polish-20260914/`にあります。
 
 ## 検証の結論と残る範囲
+
+[47](47-workspace-watch-observations.md)では、Electronの監視通知を追加記録しました。診断下で比較10回・全画面34件・100バッチ1,500ファイルの一覧反映が成功し、1,500パスのadd通知も照合しました。ただし欠落は再現せず、原因は未確定です。通常実行の失敗とnative異常終了は未解決のままです。アプリ本体は変更せず、一時的な計測用buildの復元もhashで確認しています。
 
 [46](46-world-view-run-boundary.md)で、同じ施設IDを持つ別ワールドへ切り替えた際に旧ワールドの施設選択・表示設定が残る不具合を修正しました。同じrun内の更新では選択を維持します。build・typecheck・lint、単体71・backend170・対象画面1件が成功しました。全体E2Eは33件PASS・比較候補欠落で1件FAILです。45の診断から、欠落したmanifestは実ディスクに存在する一方、backendの公開一覧とfileVersionsにないと判明しました。監視から一覧反映までの経路を継続調査します。全体検証をPASSとは扱っていません。
 
