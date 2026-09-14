@@ -30,7 +30,8 @@
 | `8457234` | 成果物の照合結果を、manifestのhash・照合時刻付きのMarkdownとJSONでコピー | [24](24-package-inspection-report.md) |
 | `bf60780` | 合成資料でレビュー比較・根拠確認・成果物照合を試せる専用デモコマンド | [25](25-offline-review-demo.md) |
 | `797a84f` | プレビュー失敗後、同じファイルの再選択や専用ボタンから再試行できるよう修正 | [26](26-preview-retry.md) |
-| `git log --oneline -- improvements/27-review-evidence-search.md`で確認 | 根拠資料の本文・題名・IDから、その資料を参照するNPC設定を逆引き | [27](27-review-evidence-search.md) |
+| `91b7556` | 根拠資料の本文・題名・IDから、その資料を参照するNPC設定を逆引き | [27](27-review-evidence-search.md) |
+| `git log --oneline -- improvements/28-dev-checkpoint-test-wait.md`で確認 | DEV検証が保存前のチェックポイントを取得して失敗する競合を修正 | [28](28-dev-checkpoint-test-wait.md) |
 
 各コミットの直後に差分の自己レビューを実施しました。機能ごとに取り消す場合は、作業ツリーの変更を確認したうえで`git revert <commit>`を使えます。全体を戻す場合は表の下から上の順にrevertしてください。
 

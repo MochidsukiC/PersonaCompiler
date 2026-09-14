@@ -12,6 +12,7 @@ test('edits DEV prompts, branches before world generation and restores historica
     await page.getByRole('button', { name: 'DEV', exact: true }).click()
     await page.getByRole('button', { name: 'DEVを有効にする' }).click()
     await expect(page.getByRole('button', { name: 'DEV ON', exact: true })).toBeVisible()
+    await expect(page.getByLabel('DEVチェックポイント').locator('option')).toHaveCount(2)
     const original = await page.evaluate(() => window.persona.snapshot())
     const point = (await page.evaluate(() => window.persona.devPanel())).checkpoints[0]
     await page.getByLabel('DEV編集対象').selectOption('parent')
