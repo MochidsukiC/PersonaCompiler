@@ -5,6 +5,15 @@ import { population, draft } from './fixtures'
 import { lifeTools } from '../../src/core/life-contracts'
 
 describe('Parent prompt integration', () => {
+  it('explains organization and construction tools only to compatible conversations', () => {
+    const prompts = new BootstrapPrompts()
+    expect(prompts.npc(population.npcs[0], draft.specification)).not.toContain('createOrganization')
+    expect(prompts.npc(population.npcs[0], draft.specification, false, false, true)).toContain('createOrganization')
+    expect(prompts.npc(population.npcs[0], draft.specification, false, false, true)).not.toContain('buildFacility')
+    expect(prompts.npc(population.npcs[0], draft.specification, false, false, true, true)).toContain('buildFacility')
+    expect(lifeTools('facility').map(t => t.name)).not.toContain('buildFacility')
+    expect(prompts.facility(draft.specification.town.facilities[0], draft.specification)).toContain('通知された現在turn')
+  })
   it('enables memory prompts and tools only for new versioned NPC conversations', () => {
     const prompts = new BootstrapPrompts()
     expect(prompts.npc(population.npcs[0], draft.specification)).not.toContain('consolidateMemory')

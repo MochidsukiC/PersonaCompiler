@@ -145,6 +145,72 @@ async function review(engine: BackendEngine, runtime: Runtime, configuration = s
 }
 
 describe('Preparation harness', () => {
+  it('retains a facility created during pause without starting inference until resume', async () => {
+    const { engine, runtime } = await setup()
+    await review(engine, runtime); await engine.backendCommand({ type: 'approve', revision: 1 }); await complete(engine, runtime, population)
+    const create = runtime.create.bind(runtime), handler = runtime.toolHandler
+    let release!: () => void, constructing = false, built = false
+    const gate = new Promise<void>(resolve => { release = resolve })
+    vi.spyOn(runtime, 'create').mockImplementation(async (binding, instructions) => {
+      if (binding.agentId.startsWith('facility-built-')) { constructing = true; await gate }
+      return create(binding, instructions)
+    })
+    runtime.toolHandler = async call => {
+      if (!built && call.threadId === 'thread-npc0' && call.tool === 'endTurn') {
+        built = true
+        const result = await handler({ ...call, callId: 'paused-build', tool: 'buildFacility', arguments: { name: '工房', type: 'workshop', description: '制作', dimensions: { x: 10, y: 10, z: 3 }, organizationId: null } })
+        expect(result.success).toBe(true)
+      }
+      return handler(call)
+    }
+    try {
+      await engine.backendCommand({ type: 'startSimulation', step: true })
+      await vi.waitFor(() => expect(constructing, JSON.stringify({ error: engine.backendStatus().error, simulation: engine.backendStatus().simulation?.stage })).toBe(true), { timeout: 10000 })
+      await engine.pause()
+    } finally { release() }
+    await vi.waitFor(() => expect(engine.backendStatus().preparation.sessions.find(s => s.agentId.startsWith('facility-built-'))?.creation).toBe('initialized'))
+    const facility = engine.backendStatus().simulation!.facilities.find(f => f.construction)!
+    expect(facility.layout).toBeNull()
+    expect(runtime.historyTurns.has(`thread-facility-${facility.id}`)).toBe(false)
+    await engine.backendCommand({ type: 'startSimulation', step: true })
+    await vi.waitFor(() => expect(engine.backendStatus().simulation?.facilities.find(f => f.id === facility.id)?.layout).not.toBeNull(), { timeout: 10000 })
+    expect(runtime.created.filter(id => id === `facility-${facility.id}`)).toHaveLength(1)
+  })
+  it.each([false, true])('creates a constructed facility conversation and restores its map and binding (memory=%s)', async memory => {
+    const { engine, runtime, root } = await setup(undefined, memory)
+    await review(engine, runtime)
+    await engine.backendCommand({ type: 'approve', revision: 1 })
+    await complete(engine, runtime, population)
+    const lock = structuredClone(engine.backendStatus().preparation.lock)
+    const originalMap = structuredClone(engine.backendStatus().preparation.draft!.map)
+    const handler = runtime.toolHandler
+    let built = false
+    runtime.toolHandler = async call => {
+      if (!built && call.threadId === 'thread-npc0' && call.tool === 'endTurn') {
+        built = true
+        const result = await handler({ ...call, callId: 'build-once', tool: 'buildFacility', arguments: { name: '共同工房', type: 'workshop', description: '道具を制作する', dimensions: { x: 10, y: 10, z: 3 }, organizationId: null } })
+        expect(result.success).toBe(true)
+      }
+      return handler(call)
+    }
+    await engine.backendCommand({ type: 'startSimulation', step: true })
+    await vi.waitFor(() => expect(engine.backendStatus().simulation?.stage).toBe('paused'), { timeout: 10000 })
+    const facility = engine.backendStatus().simulation!.facilities.find(f => f.construction)!
+    expect(facility.layout?.publicState).toBe('利用できます')
+    const agentId = `facility-${facility.id}`
+    expect(runtime.created.filter(id => id === agentId)).toHaveLength(1)
+    expect(engine.backendStatus().preparation.sessions.find(s => s.agentId === agentId)).toMatchObject({ role: 'facility', modelId: settings.facility.modelId, effort: settings.facility.effort, creation: 'initialized' })
+    expect(engine.snapshot().state.map?.locations).toContainEqual(expect.objectContaining({ id: facility.locationId, name: '共同工房' }))
+    expect(engine.snapshot().state.map?.connections).toContainEqual(expect.objectContaining({ from: 'home', to: facility.locationId }))
+    expect(engine.snapshot().state.agents.find(a => a.id === agentId)?.name).toBe('共同工房')
+    expect(engine.backendStatus().preparation.draft!.map).toEqual(originalMap)
+    expect(engine.backendStatus().preparation.lock).toEqual(lock)
+    await engine.close(); engines.delete(engine)
+    const restored = await setup(root, memory)
+    expect(restored.runtime.created).toEqual([])
+    expect(restored.engine.snapshot().state.map?.locations).toContainEqual(expect.objectContaining({ id: facility.locationId }))
+    expect(restored.engine.backendStatus().simulation!.facilities.find(f => f.id === facility.id)).toEqual(facility)
+  })
   async function pendingDesign(memory = false) {
     const fixture = await setup(undefined, memory)
     await review(fixture.engine, fixture.runtime)

@@ -35,7 +35,7 @@ export class TurnAlreadyEndedError extends Error {}
 export interface LifeServices {
   consolidationPrompt?(): string
   lifecycle?: { seed: string; birth(request: Birth, parents: Resident[], turn: number): Promise<NpcInitialization> }
-  start(agentId: string, text: string, clientId: string): Promise<string>
+  start(agentId: string, text: string, clientId: string): Promise<string | null>
   steer(agentId: string, turnId: string, text: string, clientId: string): Promise<void>
   compact(agentId: string): Promise<void>
   interrupt(agentId: string, turnId: string): Promise<void>
@@ -75,9 +75,15 @@ export class LifeHarness {
       const expected = specification.town.facilities
       const people = this.data.world.lifecycle?.residents ?? population.npcs
       if (!!this.data.world.lifecycle !== !!services.lifecycle) throw new LifeRuleError('保存済み生活versionとサービスが一致しません')
-      if (this.data.world.facilities.length !== expected.length || this.data.world.actors.length !== people.length) throw new LifeRuleError('保存済み世界と承認仕様の人数・施設数が一致しません')
-      if (new Set(this.data.world.facilities.map(f => f.id)).size !== expected.length || new Set(this.data.world.actors.map(a => a.id)).size !== people.length) throw new LifeRuleError('保存済み世界の施設IDまたはNPC IDが重複しています')
+      if (this.data.world.facilities.filter(f => !f.construction).length !== expected.length || this.data.world.actors.length !== people.length) throw new LifeRuleError('保存済み世界と承認仕様の人数・施設数が一致しません')
+      if (new Set(this.data.world.facilities.map(f => f.id)).size !== this.data.world.facilities.length || new Set(this.data.world.facilities.map(f => f.locationId)).size !== this.data.world.facilities.length || new Set(this.data.world.actors.map(a => a.id)).size !== people.length) throw new LifeRuleError('保存済み世界の施設ID・所在地またはNPC IDが重複しています')
       for (const f of this.data.world.facilities) {
+        if (f.construction) {
+          const c = f.construction
+          if (expected.some(v => v.id === f.id || v.locationId === f.locationId) || f.type === 'residential' || !people.some(n => n.id === c.builderId) || c.requestedTurn > this.data.world.turn || !this.data.world.facilities.some(v => v.locationId === c.connectedLocationId && v.id !== f.id) || (c.organizationId !== null && !this.data.world.organizations?.some(o => o.id === c.organizationId))) throw new LifeRuleError(`保存済み建設施設の参照が不正です: ${f.id}`)
+          if (f.layout) validateLayout(f, f.layout, [])
+          continue
+        }
         const source = expected.find(v => v.id === f.id && v.locationId === f.locationId)
         if (!source || (this.data.world.lifecycle && f.type === 'residential' ? (['x', 'y', 'z'] as const).some(axis => f.dimensions[axis] < source.dimensions![axis]) : JSON.stringify(source.dimensions) !== JSON.stringify(f.dimensions))) throw new LifeRuleError(`保存済み施設と承認仕様が一致しません: ${f.id}`)
         if (f.layout) validateLayout(f, f.layout, this.data.world.lifecycle ? f.layout.homes.map(h => h.householdId) : households(population).map(h => h.id))
@@ -223,7 +229,8 @@ export class LifeHarness {
         const destination = a.id !== id && a.activity === 'ended' && a.nextFacilityId ? d.world.facilities.find(f => f.id === a.nextFacilityId) : undefined
         return { id: a.id, name: a.name, position: destination ? null : a.position, activity: a.activity, locationId: destination?.locationId ?? a.locationId }
       }).filter(a => a.locationId === actor.locationId),
-      destinations: d.world.facilities.map(f => ({ id: f.id, name: f.name, locationId: f.locationId })),
+      destinations: d.world.facilities.filter(f => f.layout).map(f => ({ id: f.id, name: f.name, locationId: f.locationId })),
+      construction: d.world.facilities.filter(f => f.construction).map(f => ({ id: f.id, name: f.name, locationId: f.locationId, ready: !!f.layout, ...f.construction })),
       ...(this.cognition ? { memorySources: this.cognition.availableSources(id), memoryProgress: this.cognition.progress(id) } : {}) }
   }
   private endActivity(d: LifeCheckpoint, actor: LifeActor): void {
@@ -248,7 +255,7 @@ export class LifeHarness {
   }
   private enqueueMissingInitialization(d: LifeCheckpoint): void {
     const pending = (id: string) => d.jobs.some(j => j.agentId === id && !['done', 'discarded'].includes(j.status))
-    if (d.world.phase === 'facilities') for (const f of d.world.facilities) {
+    for (const f of d.world.facilities.filter(f => d.world.phase === 'facilities' || f.construction)) {
       const id = `facility-${f.id}`
       if (!f.layout && !pending(id)) this.enqueue(d, id, 'layout', `施設初期化です。initializeFacilityで領域を確定したら応答を終了してください。施設のサイズは変更できません。\n${JSON.stringify({ facility: f, households: f.type === 'residential' ? households(this.population) : [], bounds: 'min/maxは両端を含む整数座標。家同士の範囲は重複不可。全世帯に1軒ずつ必要。' })}`)
     }
@@ -574,7 +581,16 @@ export class LifeHarness {
         return
       }
     }
-    else turnId = await this.services.start(job.agentId, text, job.id)
+    else {
+      turnId = await this.services.start(job.agentId, text, job.id)
+      if (turnId === null) {
+        await this.update(d => {
+          for (const current of d.jobs.filter(j => j.id === job.id || j.batchId === job.id)) { current.status = 'queued'; current.turnId = null; delete current.batchId }
+          if (d.active[job.agentId]?.turnId === null) delete d.active[job.agentId]
+        })
+        return
+      }
+    }
     await this.update(d => {
       for (const current of d.jobs.filter(j => j.id === job.id || j.batchId === job.id)) {
         if (current.status === 'done') continue
@@ -811,8 +827,15 @@ export class LifeHarness {
     if (tool === 'completeHome' && d.world.lifecycle) return this.completeHome(d, agentId, input)
     if (tool === 'initializeFacility') {
       const facility = d.world.facilities.find(f => `facility-${f.id}` === agentId)
-      if (!facility || d.world.phase !== 'facilities' || facility.layout) throw new LifeRuleError('施設の初期化時だけ実行できます')
+      if (!facility || (d.world.phase !== 'facilities' && !facility.construction) || facility.layout) throw new LifeRuleError('施設の初期化時だけ実行できます')
       facility.layout = validateLayout(facility, input, households(this.population).map(h => h.id))
+      if (facility.construction) {
+        const builder = this.actor(d, facility.construction.builderId)
+        const organization = d.world.organizations?.find(o => o.id === facility.construction!.organizationId)
+        if (organization && organization.locationId === null) organization.locationId = facility.locationId
+        this.event(d, builder, 'construction', `施設「${facility.name}」が完成しました。移動先: ${facility.id}`)
+        if (builder.activity !== 'dead') this.enqueue(d, builder.id, 'reply', `施設「${facility.name}」が完成しました。moveToFacilityのfacilityId=${facility.id}で移動できます。`, builder.activity === 'sleeping')
+      }
       return reply({ initialized: facility.id })
     }
     if (tool === 'completeFacilityUse') {
@@ -849,6 +872,17 @@ export class LifeHarness {
     if (!(boundaryNotice && ['remember', 'remindMe'].includes(tool)) && (d.world.phase !== 'activity' || actor.activity !== 'active')) throw new LifeRuleError(`現在は行動できません: ${d.world.phase}/${actor.activity}`)
     if (d.world.lifecycle && ['marry', 'createHome', 'consentHome'].includes(tool)) return this.familyTool(d, agentId, tool, input)
     switch (tool) {
+      case 'buildFacility': {
+        const value = lifeToolSchemas.buildFacility.parse(input)
+        if (value.type === 'residential') throw new LifeRuleError('世帯用の住宅は既存の住宅街で管理します。新居にはcreateHomeを使用してください')
+        if (value.organizationId !== null && !d.world.organizations?.some(o => o.id === value.organizationId && o.members.includes(agentId))) throw new LifeRuleError(`所属していない組織の施設は建設できません: ${value.organizationId}`)
+        const id = `built-${unique()}`
+        const created: LifeFacility = { id, locationId: id, name: value.name, type: value.type, dimensions: value.dimensions, layout: null, construction: { builderId: agentId, organizationId: value.organizationId, requestedTurn: d.world.turn, connectedLocationId: actor.locationId, description: value.description } }
+        d.world.facilities.push(created)
+        this.enqueueMissingInitialization(d)
+        this.event(d, actor, 'construction', `施設「${created.name}」の建設を依頼しました。用途: ${created.type}。${value.description}`)
+        return reply({ facilityId: id, locationId: id, status: 'building', instruction: '担当施設Agentの初期化後に利用できます。完成通知を待ってください。' })
+      }
       case 'createOrganization': {
         const value = lifeToolSchemas.createOrganization.parse(input)
         if (value.locationId !== null && !d.world.facilities.some(f => f.locationId === value.locationId)) throw new LifeRuleError(`組織の所在地が不明です: ${value.locationId}`)
@@ -890,6 +924,7 @@ export class LifeHarness {
         if (actor.nextFacilityId) throw new LifeRuleError('このターンの施設間移動は既に予約されています')
         const target = d.world.facilities.find(f => f.id === value.facilityId)
         if (!target || target.locationId === actor.locationId) throw new LifeRuleError('移動先には別の施設を指定してください')
+        if (!target.layout) throw new LifeRuleError(`施設は建設・初期化中です: ${target.id}`)
         actor.nextFacilityId = target.id; this.endActivity(d, actor); this.event(d, actor, 'travel', `${target.name}へ移動しました。入場位置は次ターンに確定します`)
         return reply({ reserved: target.id, endTurn: true })
       }

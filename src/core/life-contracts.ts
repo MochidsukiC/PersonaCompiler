@@ -9,7 +9,9 @@ export const volumeSchema = z.object({ min: voxelSchema, max: voxelSchema }).str
 const regionSchema = z.object({ id, name: z.string().min(1), description: z.string(), bounds: volumeSchema }).strict()
 export const homeSchema = regionSchema.extend({ householdId: id })
 export const facilityLayoutSchema = z.object({ regions: z.array(regionSchema), homes: z.array(homeSchema), publicState: z.string() }).strict()
-export const lifeFacilitySchema = z.object({ id, locationId: id, name: z.string(), type: z.string(), dimensions: dimensionsSchema, layout: facilityLayoutSchema.nullable() })
+export const lifeFacilitySchema = z.object({ id, locationId: id, name: z.string(), type: z.string(), dimensions: dimensionsSchema, layout: facilityLayoutSchema.nullable(),
+  construction: z.object({ builderId: id, organizationId: id.nullable(), requestedTurn: z.number().int().nonnegative(), connectedLocationId: id, description: z.string().trim().min(1).max(4000) }).strict().optional()
+})
 export const lifeActorSchema = z.object({
   id, name: z.string(), householdId: id, locationId: id, position: voxelSchema.nullable(),
   activity: z.enum(['entering', 'active', 'ended', 'sleeping', 'dead']), nextFacilityId: id.nullable(), wakeAt: z.number().int().nullable(),
@@ -21,7 +23,7 @@ export const organizationSchema = z.object({
   founderId: id, foundedTurn: z.number().int().nonnegative(), locationId: id.nullable(), members: z.array(id)
 }).strict()
 export const lifeEventSchema = z.object({
-  sequence: z.number().int(), turn: z.number().int(), kind: z.enum(['move', 'travel', 'speech', 'facility', 'sleep', 'wake', 'end', 'entry', 'death', 'birth', 'marriage', 'home', 'organization']),
+  sequence: z.number().int(), turn: z.number().int(), kind: z.enum(['move', 'travel', 'speech', 'facility', 'sleep', 'wake', 'end', 'entry', 'death', 'birth', 'marriage', 'home', 'organization', 'construction']),
   actorId: id, text: z.string(), recipients: z.array(id), volume: voiceSchema.optional(), locationId: id, position: voxelSchema.nullable()
 })
 export const simulationSchema = z.object({
@@ -47,6 +49,7 @@ export const lifeToolSchemas = {
   createOrganization: organizationSchema.pick({ name: true, type: true, purpose: true, locationId: true }),
   joinOrganization: z.object({ organizationId: id }).strict(),
   leaveOrganization: z.object({ organizationId: id }).strict(),
+  buildFacility: z.object({ name: z.string().trim().min(1).max(160), type: z.string().trim().min(1).max(80), description: z.string().trim().min(1).max(4000), dimensions: dimensionsSchema, organizationId: id.nullable() }).strict(),
   initializeFacility: facilityLayoutSchema,
   setInitialPosition: z.object({ position: voxelSchema }).strict(),
   moveWithinFacility: z.object({ position: voxelSchema }).strict(),
@@ -63,6 +66,7 @@ export const lifeToolDescriptions: Record<LifeToolName, string> = {
   createOrganization: '会社・ギルド・研究会などの組織を自分の意思で設立する。種別と目的は自由。所在地を持たない組織はlocationId=null。設立者だけが最初の構成員となり、他人を代理で加入させない。',
   joinOrganization: '公開された組織に自分自身が参加する。組織一覧と構成員はgetSituation.organizationsで確認できる。',
   leaveOrganization: '組織から自分自身が脱退する。設立者も脱退でき、設立の記録は残る。',
+  buildFacility: '現在地につながる新しい施設を建設する。名称・用途・説明・内部サイズを指定する。organizationIdは自分が所属する組織、個人施設ならnull。担当施設Agentが内部配置を完成させるまで移動不可。世帯用住宅街residentialは既存の住宅機能で管理するため指定不可。',
   initializeFacility: '初期化時だけ使用する。承認された施設内の意味付き領域と住宅街の世帯別の家を確定する。boundsのmin/maxは両端を含む整数座標。',
   setInitialPosition: '初期化時または別施設へ入場したターン開始時に、自分の初期座標を選ぶ。',
   moveWithinFacility: '同じ施設内の指定した整数座標へ即時移動する。回数制限なし。家の出入りもこのToolを使う。',
@@ -75,7 +79,7 @@ export const lifeToolDescriptions: Record<LifeToolName, string> = {
 }
 export function lifeTools(role: 'npc' | 'facility', memoryEnabled = false, lifecycleEnabled = false) {
   const names: LifeToolName[] = role === 'npc'
-    ? ['getSituation', 'createOrganization', 'joinOrganization', 'leaveOrganization', 'setInitialPosition', 'moveWithinFacility', 'moveToFacility', 'sendMessage', 'useFacility', 'endTurn', 'sleep']
+    ? ['getSituation', 'createOrganization', 'joinOrganization', 'leaveOrganization', 'buildFacility', 'setInitialPosition', 'moveWithinFacility', 'moveToFacility', 'sendMessage', 'useFacility', 'endTurn', 'sleep']
     : ['initializeFacility', 'completeFacilityUse']
   return [...names.map(name => ({ type: 'function' as const, name, description: lifeToolDescriptions[name], inputSchema: z.toJSONSchema(lifeToolSchemas[name]) })), ...(role === 'npc' && memoryEnabled ? memoryTools() : []), ...(lifecycleEnabled ? lifecycleTools(role) : [])]
 }

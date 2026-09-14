@@ -94,6 +94,58 @@ async function call(harness: LifeHarness, id: string, tool: string, args: unknow
 }
 
 describe('Residential space', () => {
+  it.each([false, true])('builds organization facilities, gates entry until ready and restores construction (memory=%s)', async memory => {
+    const changes: LifeChange[] = []
+    const services = new Services()
+    if (memory) Object.assign(services, { memory: { initialize: () => undefined, changed: (change: LifeChange) => changes.push(structuredClone(change)) } })
+    const { harness } = await setup(12, undefined, services)
+    await harness.start(true); await active(harness)
+    await call(harness, 'npc0', 'createOrganization', { name: '星見会', type: '研究会', purpose: '観測', locationId: null })
+    const organizationId = harness.snapshot().organizations![0].id
+    const request = { turnId: harness.checkpoint().active.npc0.turnId!, callId: 'build', tool: 'buildFacility', arguments: { name: '天文台', type: 'observatory', description: '星を観測する', dimensions: { x: 20, y: 20, z: 3 }, organizationId } }
+    expect((await harness.tool('npc0', request)).success).toBe(true)
+    await harness.tool('npc0', request)
+    const built = harness.snapshot().facilities.find(f => f.construction)!, agent = `facility-${built.id}`
+    expect(harness.snapshot().facilities).toHaveLength(4)
+    await vi.waitFor(() => expect(harness.checkpoint().active[agent]?.turnId).toBeTruthy())
+    expect((await call(harness, 'npc0', 'moveToFacility', { facilityId: built.id })).success).toBe(false)
+    const building = harness.checkpoint()
+    const read = await setup(12, building, Object.assign(new Services(), { turns: structuredClone(services.turns) }))
+    expect(read.harness.snapshot().facilities.at(-1)?.layout).toBeNull()
+    expect((await call(harness, agent, 'initializeFacility', { regions: [], homes: [], publicState: '観測できます' })).success).toBe(true)
+    services.finish(agent); await harness.drain()
+    expect(harness.snapshot().organizations![0].locationId).toBe(built.locationId)
+    expect((await call(harness, 'npc0', 'moveToFacility', { facilityId: built.id })).success).toBe(true)
+    for (const a of harness.snapshot().actors) { if (a.id !== 'npc0') await call(harness, a.id, 'endTurn'); services.finish(a.id) }
+    await vi.waitFor(() => expect(harness.snapshot().stage).toBe('paused'))
+    await harness.resume(true); await active(harness)
+    expect(harness.snapshot().actors[0].locationId).toBe(built.locationId)
+    const use = await call(harness, 'npc0', 'useFacility', { request: '星を観測したい' })
+    const requestId = JSON.parse(use.contentItems[0].text).requestId
+    await vi.waitFor(() => expect(harness.checkpoint().active[agent]?.turnId).toBeTruthy())
+    expect((await call(harness, agent, 'completeFacilityUse', { requestId, text: '望遠鏡で星が見えます', publicState: '観測中' })).success).toBe(true)
+    services.finish(agent); await harness.drain()
+    await harness.pause(); await harness.drain()
+    const restored = await setup(12, harness.checkpoint())
+    expect(restored.harness.snapshot().facilities.at(-1)).toEqual(harness.snapshot().facilities.at(-1))
+    if (memory) expect(changes.some(c => c.patches.some(p => p.path[0] === 'world' && p.path[1] === 'facilities' && p.path[2] === 3))).toBe(true)
+    expect(services.errors).toEqual([])
+  })
+
+  it('rejects construction for another organization and invalid plans without partial buildings', async () => {
+    const { harness } = await setup(12)
+    await harness.start(true); await active(harness)
+    await call(harness, 'npc0', 'createOrganization', { name: '工房', type: '会社', purpose: '制作', locationId: null })
+    const organizationId = harness.snapshot().organizations![0].id
+    const plan = { name: '工房', type: 'workshop', description: '共同制作', dimensions: { x: 10, y: 10, z: 3 }, organizationId }
+    expect((await call(harness, 'npc1', 'buildFacility', plan)).success).toBe(false)
+    for (const input of [{ ...plan, type: 'residential' }, { ...plan, builderId: 'npc1' }, { ...plan, dimensions: { x: 0, y: 1, z: 1 } }]) expect((await call(harness, 'npc0', 'buildFacility', input)).success).toBe(false)
+    expect(harness.snapshot().facilities).toHaveLength(3)
+    expect((await call(harness, 'npc1', 'buildFacility', { ...plan, organizationId: null })).success).toBe(true)
+    const saved = harness.checkpoint()
+    saved.world.facilities.at(-1)!.construction!.connectedLocationId = 'missing'
+    await expect(setup(12, saved)).rejects.toThrow('保存済み建設施設')
+  })
   it.each([false, true])('creates genre-independent organizations and persists membership choices (memory=%s)', async memory => {
     const changes: LifeChange[] = []
     const services = new Services()

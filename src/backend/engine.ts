@@ -26,6 +26,7 @@ import type { TerminalBridge } from './terminals'
 import type { RpcNotification } from './rpc'
 import { LifeHarness, lifeCheckpointSchema, type LifeCheckpoint } from '../core/life-harness'
 import { lifeTools } from '../core/life-contracts'
+import { constructedMap } from '../core/construction'
 import { validateLifeSpecification } from '../core/spatial'
 import { PersistenceCoordinator } from './persistence-coordinator'
 import type { PersistencePortFactory } from '../core/persistence'
@@ -307,8 +308,8 @@ export class BackendEngine {
     })
   }
 
-  private npcInstructions(npc: NpcInitialization, spec: import('../core/contracts').Specification, memory = false, lifecycle = false, community = true): string {
-    return this.dev?.prompts.npc === undefined ? this.prompts.npc(npc, spec, memory, lifecycle, community) : this.dev.prompts.npc.replace(/\{\{(townName|birthModelId)\}\}/g, (_, key: string) => key === 'townName' ? spec.town.name : npc.birthModelId)
+  private npcInstructions(npc: NpcInitialization, spec: import('../core/contracts').Specification, memory = false, lifecycle = false, community = true, construction = true): string {
+    return this.dev?.prompts.npc === undefined ? this.prompts.npc(npc, spec, memory, lifecycle, community, construction) : this.dev.prompts.npc.replace(/\{\{(townName|birthModelId)\}\}/g, (_, key: string) => key === 'townName' ? spec.town.name : npc.birthModelId)
   }
   private facilityInstructions(facility: import('../core/contracts').Specification['town']['facilities'][number], spec: import('../core/contracts').Specification): string {
     return this.dev?.prompts.facility === undefined ? this.prompts.facility(facility, spec) : this.dev.prompts.facility.replace(/\{\{(townName|facilityName)\}\}/g, (_, key: string) => key === 'townName' ? spec.town.name : facility.name)
@@ -320,11 +321,32 @@ export class BackendEngine {
     if (binding.role === 'npc') {
       const npc = this.people().find(n => n.id === binding.agentId)
       if (!npc) throw new Error(`Sessionの住民がありません: ${binding.agentId}`)
-      return this.npcInstructions(npc, spec, binding.memoryVersion === 1, binding.lifecycleVersion === 1, binding.communityToolsVersion === 1)
+      return this.npcInstructions(npc, spec, binding.memoryVersion === 1, binding.lifecycleVersion === 1, !!binding.communityToolsVersion, binding.communityToolsVersion === 2)
     }
-    const facility = spec.town.facilities.find(f => `facility-${f.id}` === binding.agentId)
+    const facility = this.facilityDefinition(binding.agentId)
     if (!facility) throw new Error(`Sessionの施設がありません: ${binding.agentId}`)
     return this.facilityInstructions(facility, spec)
+  }
+  private facilityDefinition(agentId: string) {
+    const facility = this.life?.snapshot().facilities.find(f => `facility-${f.id}` === agentId)
+    if (facility?.construction) return { id: facility.id, name: facility.name, type: facility.type, locationId: facility.locationId, dimensions: facility.dimensions, description: facility.construction.description }
+    return this.view.preparation.draft?.specification.town.facilities.find(f => `facility-${f.id}` === agentId)
+  }
+
+  private initializeBuiltFacility(agentId: string): Promise<boolean> {
+    return this.serial(async () => {
+      if (this.stopRequested || this.stopping || this.life?.snapshot().stage !== 'running') return false
+      this.writable(); this.ensureConnected()
+      if (this.view.preparation.sessions.some(s => s.agentId === agentId)) return true
+      const lifeFacility = this.life?.snapshot().facilities.find(f => `facility-${f.id}` === agentId)
+      const facility = this.facilityDefinition(agentId)
+      if (!lifeFacility?.construction || !facility) throw new Error(`建設依頼のない施設です: ${agentId}`)
+      const draft = await this.lockedDraft(), settings = this.settings()
+      await this.workspace.write(`facilities/${facility.id}/facility.json`, JSON.stringify(facility, null, 2))
+      if (this.stopRequested || this.stopping || this.life?.snapshot().stage !== 'running') return false
+      await this.createBinding({ agentId, sessionId: agentId, role: 'facility', modelId: settings.facility.modelId, effort: settings.facility.effort, cwd: path.join(this.workspace.root, `facilities/${facility.id}`), threadId: null, creation: 'requested', seedPersisted: false }, this.facilityInstructions(facility, draft.specification), JSON.stringify({ facility, construction: lifeFacility.construction, turn: this.life!.snapshot().turn }))
+      return true
+    })
   }
   private async devStores(): Promise<Workspace[]> {
     const stores = [this.workspace], seen = new Set([this.world.runId])
@@ -749,7 +771,7 @@ NPCのモデルAutoとeffort Autoは独立しています。effortはsettings.np
     if (this.lifecycleVersion) binding.lifecycleVersion = 1
     if (this.persistence) binding.persistenceVersion = 2
     if (this.lifeVersion && binding.role !== 'parent') binding.lifeToolsVersion = 1
-    if (this.lifeVersion && binding.role === 'npc') binding.communityToolsVersion = 1
+    if (this.lifeVersion && binding.role === 'npc') binding.communityToolsVersion = 2
     if (this.memoryVersion && binding.role === 'npc') binding.memoryVersion = this.memoryVersion
     const p = this.view.preparation
     if (p.sessions.some(s => s.agentId === binding.agentId)) throw new Error(`Session生成が既に記録されています: ${binding.agentId}`)
@@ -816,7 +838,7 @@ NPCのモデルAutoとeffort Autoは独立しています。effortはsettings.np
       let instructions = binding.role === 'parent' ? this.parentInstructions() : binding.role === 'facility' && this.dev ? this.instructions(binding) : undefined
       if (binding.role === 'npc' && binding.lifeToolsVersion) {
         if (!npc || !p.draft) throw new Error(`NPCの再接続に必要な初期情報と仕様がありません: ${binding.agentId}`)
-        instructions = this.npcInstructions(npc, p.draft.specification, binding.memoryVersion === 1, binding.lifecycleVersion === 1, binding.communityToolsVersion === 1)
+        instructions = this.npcInstructions(npc, p.draft.specification, binding.memoryVersion === 1, binding.lifecycleVersion === 1, !!binding.communityToolsVersion, binding.communityToolsVersion === 2)
       }
       if (npc && binding.role === 'npc') binding.effort = resolveEffort(requireModel(this.view.models, binding.modelId), this.settings().npc.effort, npc.age).effective
       await this.runtime.resume(binding, instructions)
@@ -856,7 +878,12 @@ NPCのモデルAutoとeffort Autoは独立しています。effortはsettings.np
         if (npc.memoryVersion !== 1 || !this.runtime.matchMemories) throw new Error(`記憶照合に対応していないConversationです: ${id}`)
         return this.runtime.matchMemories({ instructions: this.dev?.prompts.memoryMatcher, agentId: id, modelId: npc.modelId, effort: npc.effort, cwd: npc.cwd, cue, memories: records.map(record => ({ id: record.id, text: `${record.text}\n本人にとっての意味: ${record.meaning}`, ...record.cues })) }, signal, progress)
       } } } : {}),
-      start: (id, text, clientId) => this.runtime.startTurn(binding(id), text, [], clientId),
+      start: async (id, text, clientId) => {
+        if (!p.sessions.some(s => s.agentId === id) && !await this.initializeBuiltFacility(id)) return null
+        const simulation = this.life!.snapshot()
+        if (simulation.stage !== 'running' && simulation.facilities.some(f => f.construction && `facility-${f.id}` === id)) return null
+        return this.runtime.startTurn(binding(id), text, [], clientId)
+      },
       steer: (id, turnId, text, clientId) => this.runtime.steer(binding(id).threadId!, turnId, text, clientId),
       compact: id => this.runtime.compact(binding(id).threadId!),
       interrupt: (id, turnId) => {
@@ -1027,15 +1054,15 @@ NPCのモデルAutoとeffort Autoは独立しています。effortはsettings.np
   private async publishWorld(): Promise<void> {
     const p = this.view.preparation
     const state = this.world
-    const map = p.draft?.map ?? null
+    const simulation = this.life?.snapshot()
+    const map = p.draft ? constructedMap(p.draft.map, simulation?.facilities ?? []) : null
     const positions: Record<string, string | null> = {}
     const agents: RunState['agents'] = p.sessions.filter(s => s.creation === 'initialized').map(binding => {
       const npc = this.people().find(n => n.id === binding.agentId)
-      const facility = p.draft?.specification.town.facilities.find(f => `facility-${f.id}` === binding.agentId)
+      const facility = simulation?.facilities.find(f => `facility-${f.id}` === binding.agentId) ?? p.draft?.specification.town.facilities.find(f => `facility-${f.id}` === binding.agentId)
       if (npc) positions[binding.agentId] = npc.locationId
       return { id: binding.agentId, sessionId: binding.sessionId, parentId: binding.role === 'parent' ? null : 'parent', role: binding.role, name: npc?.name ?? facility?.name ?? 'オーケストレーター', color: binding.role === 'npc' ? '#9dbafa' : binding.role === 'facility' ? '#8bcdb0' : '#b0c0f4', status: this.life?.isDead(binding.agentId) || (this.sessions.has(binding.sessionId) && !this.sessions.isRunning(binding.sessionId)) ? 'ended' : binding.threadId && this.activeTurns.has(binding.threadId) ? 'running' : 'idle' }
     })
-    const simulation = this.life?.snapshot()
     if (simulation) {
       this.view.simulation = simulation
       for (const a of simulation.actors) positions[a.id] = a.activity === 'dead' ? null : a.locationId
