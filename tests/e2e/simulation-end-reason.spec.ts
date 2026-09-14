@@ -32,6 +32,7 @@ test('shows the saved simulation end reason consistently without inferring one f
       })
       publish()
     }, { original, backend, simulation, map: draft.map })
+    await page.getByRole('button', { name: '概要', exact: true }).click()
     const heading = page.locator('.backend-panel.life-summary .backend-heading strong')
     for (const [reason, label] of [
       ['population_extinction', '全住民死亡'], ['generation_zero_extinction', '初期世代の全員死亡'],

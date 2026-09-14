@@ -13,9 +13,11 @@ import { PackageInspection } from './PackageInspection'
 import { EventTimeline } from './EventTimeline'
 import { OrganizationsPanel } from './OrganizationsPanel'
 import { EconomyPanel } from './EconomyPanel'
+import './overview.css'
 
 const phaseLabels = { morning: '朝', noon: '昼', evening: '夕', night: '夜' }
 const stageLabels = { draft: '準備前', preparing: '準備中', ready: '準備完了', running: 'シミュレーション中', paused: '一時停止中', ended: '終了', error: 'エラー' }
+type ViewMode = 'overview' | 'map' | 'relationships' | 'events' | 'organizations' | 'economy'
 
 export default function App() {
   const [devOpen, setDevOpen] = useState(false)
@@ -27,7 +29,7 @@ export default function App() {
   const agentsRef = useRef<AgentDescriptor[]>([])
   agentsRef.current = workspace ? workspace.state.agents : []
   activeRef.current = agentsRef.current.find(agent => agent.id === activeId)?.sessionId ?? null
-  const [mode, setMode] = useState<'map' | 'relationships' | 'events' | 'organizations' | 'economy'>('map')
+  const [selectedMode, setSelectedMode] = useState<{ runId?: string; value: ViewMode } | null>(null)
   const [selectedFile, setSelectedFile] = useState<string | null>(null)
   const [preview, setPreview] = useState<FilePreview | null>(null)
   const [previewError, setPreviewError] = useState<string | null>(null)
@@ -55,8 +57,10 @@ export default function App() {
     return unsubscribe
   }, [report])
   const runId = workspace?.state.runId
+  const mode = selectedMode && selectedMode.runId === runId ? selectedMode.value : workspace?.state.map && (!workspace.backend || workspace.state.simulation) ? 'map' : 'overview'
+  const setMode = (value: ViewMode) => setSelectedMode({ runId, value })
   useEffect(() => {
-    setTabs(['parent']); setActiveId('parent'); setUnread(new Set()); setSelectedFile(null); setPreview(null); setPreviewError(null); setError(null); setMode('map')
+    setTabs(['parent']); setActiveId('parent'); setUnread(new Set()); setSelectedFile(null); setPreview(null); setPreviewError(null); setError(null)
   }, [runId])
 
   const previewVersion = workspace?.fileVersions ? (selectedFile ? workspace.fileVersions[selectedFile] : 0) : workspace?.version
@@ -120,17 +124,22 @@ export default function App() {
       <Explorer projectName={state.map?.name ?? '新しいシミュレーション'} files={workspace.files} agents={state.agents} selected={selectedFile} activeAgent={activeId} onSelect={openFile} onAgent={openAgent} onReveal={() => void window.persona.reveal('').catch(report)} />
       <div className="resize-handle" role="separator" aria-label="エクスプローラー幅" aria-orientation="vertical" onPointerDown={event => beginResize(event, 'left')} />
       <section className="center-panel">
-        <div className="center-tabs"><button className={!selectedFile && mode === 'map' ? 'active' : ''} onClick={() => { setSelectedFile(null); setMode('map') }}><Map size={15} />ワールド</button><button className={!selectedFile && mode === 'relationships' ? 'active' : ''} onClick={() => { setSelectedFile(null); setMode('relationships') }}><GitBranch size={15} />関係図</button>{state.simulation && <button className={!selectedFile && mode === 'events' ? 'active' : ''} onClick={() => { setSelectedFile(null); setMode('events') }}><Activity size={15} />出来事</button>}{state.simulation && <button className={!selectedFile && mode === 'organizations' ? 'active' : ''} onClick={() => { setSelectedFile(null); setMode('organizations') }}><Layers3 size={15} />組織</button>}{state.simulation?.economy && <button className={!selectedFile && mode === 'economy' ? 'active' : ''} onClick={() => { setSelectedFile(null); setMode('economy') }}>経済</button>}{selectedFile && <button className="active file-tab" onClick={() => setSelectedFile(null)}><FileText size={14} /><span>{selectedFile.split('/').at(-1)}</span><X size={13} /></button>}<span className="view-label">{selectedFile ? 'FILE PREVIEW' : 'OBSERVATORY'}</span></div>
+        <div className="center-tabs"><button className={!selectedFile && mode === 'map' ? 'active' : ''} onClick={() => { setSelectedFile(null); setMode('map') }}><Map size={15} />ワールド</button><button className={!selectedFile && mode === 'overview' ? 'active' : ''} onClick={() => { setSelectedFile(null); setMode('overview') }}><FileText size={15} />概要</button><button className={!selectedFile && mode === 'relationships' ? 'active' : ''} onClick={() => { setSelectedFile(null); setMode('relationships') }}><GitBranch size={15} />関係図</button>{state.simulation && <button className={!selectedFile && mode === 'events' ? 'active' : ''} onClick={() => { setSelectedFile(null); setMode('events') }}><Activity size={15} />出来事</button>}{state.simulation && <button className={!selectedFile && mode === 'organizations' ? 'active' : ''} onClick={() => { setSelectedFile(null); setMode('organizations') }}><Layers3 size={15} />組織</button>}{state.simulation?.economy && <button className={!selectedFile && mode === 'economy' ? 'active' : ''} onClick={() => { setSelectedFile(null); setMode('economy') }}>経済</button>}{selectedFile && <button className="active file-tab" onClick={() => setSelectedFile(null)}><FileText size={14} /><span>{selectedFile.split('/').at(-1)}</span><X size={13} /></button>}<span className="view-label">{selectedFile ? 'FILE PREVIEW' : 'OBSERVATORY'}</span></div>
         {devOpen && workspace.backend && <DevPanel key={`dev:${runId}`} view={workspace.backend} onError={report} />}
-        {state.simulation?.lifecycle && !selectedFile && mode !== 'events' && mode !== 'organizations' && mode !== 'economy' && <LifecyclePanel simulation={state.simulation} backend={workspace.backend} onAgent={openAgent} onFile={openFile} onError={report} />}
-        {workspace.backend && !selectedFile && mode !== 'events' && mode !== 'organizations' && <BackendPanel key={`backend:${runId}`} view={workspace.backend} onError={report} />}
         {selectedFile ? <div className="file-preview"><div className="file-preview-heading"><span title={selectedFile}>{selectedFile}</span><button className="icon-button" aria-label="外部エディターで開く" title="外部エディターで開く" onClick={() => void window.persona.openExternal(selectedFile).catch(report)}><ExternalLink size={15} /></button><button className="icon-button" aria-label="Windows Explorerで表示" title="Windows Explorerで表示" onClick={() => void window.persona.reveal(selectedFile).catch(report)}><FolderOpen size={15} /></button></div>{previewError && <div className="preview-error" role="alert">{previewError} {preview && '前回の内容を表示しています。'} <button className="button compact" onClick={() => openFile(selectedFile)}>プレビューを再読み込み</button></div>}{preview ? preview.kind === 'image' ? <img className="image-preview" alt={selectedFile} src={preview.content} /> : selectedFile.startsWith('compilation/') && selectedFile.endsWith('/review.json') ? <CharacterReview key={`${selectedFile}:${preview.hash}`} content={preview.content} currentPath={selectedFile} currentHash={preview.hash} runId={workspace.state.runId} files={workspace.files} fileVersions={workspace.fileVersions} workspaceVersion={workspace.version} /> : /^compilation\/[^/]+\/npcs\/[^/]+\/manifest\.json$/.test(selectedFile) ? <PackageInspection key={`${selectedFile}:${preview.hash}`} manifestPath={selectedFile} content={preview.content} files={workspace.files} /> : <pre data-testid="file-content">{preview.content}</pre> : !previewError && <p className="muted">読み込み中…</p>}<div className="preview-footer">READ ONLY VIEW <span>編集は外部エディターへ · 保存すると自動反映</span></div></div>
+          : mode === 'overview' ? <section key={`overview:${runId}`} className="overview-panel" aria-label="概要">
+            <header className="overview-heading"><h1>概要</h1><p>{state.map?.name ?? '世界の準備'}{state.map && ` · ${npcs.length}人の住民 · ${state.map.locations.length}施設`}</p></header>
+            {state.simulation?.lifecycle && <LifecyclePanel simulation={state.simulation} backend={workspace.backend} onAgent={openAgent} onFile={openFile} onError={report} />}
+            {workspace.backend && <BackendPanel key={`backend:${runId}`} view={workspace.backend} onError={report} />}
+            {!state.map && (state.stage === 'draft' && (!workspace.backend || workspace.backend.preparation.sessions.length > 0)
+              ? <Preparation real={!!workspace.backend} busy={busy || (!!workspace.backend && (!workspace.backend.authenticated || workspace.backend.preparation.busy))} onPrepare={(description, images) => void action(() => window.persona.prepare({ description, images }))} onError={report} />
+              : <div className="preparing"><div className="preparing-icon"><Globe2 size={35} /></div><span className="eyebrow">PREPARATION PHASE</span><h2>{workspace.backend?.preparation.phase === 'idle' ? '世界を始める準備' : '町の輪郭を描いています'}</h2><p>{workspace.backend?.preparation.phase === 'idle' ? '接続・認証後に役割別設定を保存してください。' : '親エージェントと、地図と住民のための場所を準備中。'}</p>{!workspace.backend && <span className="demo-explanation">デモの地図を生成しています</span>}</div>)}
+          </section>
           : mode === 'economy' && state.simulation?.economy ? <EconomyPanel key={`economy:${runId}`} world={state.simulation} onAgent={openAgent} />
           : mode === 'organizations' && state.simulation ? <OrganizationsPanel simulation={state.simulation} onAgent={openAgent} />
           : mode === 'events' && state.simulation ? <EventTimeline key={`events:${runId}`} runId={state.runId} historyAvailable={!!workspace.backend?.persistence} simulation={state.simulation} onAgent={openAgent} />
-          : state.map ? <WorldView key={`world:${runId}`} state={state} mode={mode === 'events' || mode === 'organizations' || mode === 'economy' ? 'map' : mode} onAgent={openAgent} staleRelations={workspace.staleRelations} onFile={openFile} />
-          : state.stage === 'draft' && (!workspace.backend || workspace.backend.preparation.sessions.length > 0) ? <Preparation real={!!workspace.backend} busy={busy || (!!workspace.backend && (!workspace.backend.authenticated || workspace.backend.preparation.busy))} onPrepare={(description, images) => void action(() => window.persona.prepare({ description, images }))} onError={report} />
-          : <div className="preparing"><div className="preparing-icon"><Globe2 size={35} /></div><span className="eyebrow">PREPARATION PHASE</span><h2>{workspace.backend?.preparation.phase === 'idle' ? '世界を始める準備' : '町の輪郭を描いています'}</h2><p>{workspace.backend?.preparation.phase === 'idle' ? '接続・認証後に役割別設定を保存してください。' : '親エージェントと、地図と住民のための場所を準備中。'}</p>{!workspace.backend && <span className="demo-explanation">デモの地図を生成しています</span>}</div>}
+          : state.map ? <WorldView key={`world:${runId}`} state={state} mode={mode === 'relationships' ? 'relationships' : 'map'} onAgent={openAgent} staleRelations={workspace.staleRelations} onFile={openFile} />
+          : <div className="preparing"><Globe2 size={35} /><h2>地図はまだありません</h2><p>概要タブで世界の準備を進めてください。</p><button className="button" onClick={() => setMode('overview')}>概要を開く</button></div>}
         <div className="world-footer"><span><span className="status-dot" />{npcs.length} 人の住民</span><span>{state.map?.locations.length ?? 0} 施設</span><span>{state.relationships?.relations.length ?? 0} 関係</span><span className="footer-right">{state.map ? '人物をクリックして端末を開く' : 'まずは世界の準備から'}</span></div>
       </section>
       <div className="resize-handle" role="separator" aria-label="端末幅" aria-orientation="vertical" onPointerDown={event => beginResize(event, 'right')} />

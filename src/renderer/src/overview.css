@@ -1,0 +1,7 @@
+.overview-panel { flex: 1; min-height: 0; overflow: auto; }
+.overview-heading { padding: 20px 24px; border-bottom: 1px solid var(--line); }
+.overview-heading h1 { margin: 0 0 8px; color: #d4e1ca; font-size: 22px; }
+.overview-heading p { margin: 0; color: #9fb295; font-size: 12px; }
+.overview-panel .backend-panel, .overview-panel .backend-panel.with-map, .overview-panel .lifecycle-panel { max-height: none; overflow: visible; }
+.overview-panel .preparing { padding: 32px 20px; }
+.center-panel > .center-tabs { overflow-x: auto; }

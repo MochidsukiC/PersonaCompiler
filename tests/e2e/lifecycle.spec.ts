@@ -37,6 +37,7 @@ test('shows ages, deceased residents, home progress and automatically generated 
       snapshot.version++
       BrowserWindow.getAllWindows()[0].webContents.send('persona:event', { type: 'workspace', snapshot })
     }, { original, preparation: emptyPreparation(), map: draft.map, lifecycle, review })
+    await page.getByRole('button', { name: '概要', exact: true }).click()
     const panel = page.getByRole('region', { name: '住民と世代交代' })
     await expect(panel.getByText('生存 4人 · 初期世代 4人')).toBeVisible()
     await expect(page.getByTestId('end-reason')).toHaveText('指定ターンに到達')
@@ -49,7 +50,7 @@ test('shows ages, deceased residents, home progress and automatically generated 
     await expect(panel.getByRole('button', { name: '生成を開始', exact: true })).toHaveCount(0)
     await panel.getByRole('button', { name: 'Runtime Prompt', exact: true }).click()
     await expect(page.getByTestId('file-content')).toHaveText('生成済みの人物パッケージ')
-    await page.getByRole('button', { name: 'ワールド', exact: true }).click()
+    await page.getByRole('button', { name: '概要', exact: true }).click()
     await panel.getByRole('button', { name: '制作レビュー', exact: true }).click()
     const report = page.getByRole('article', { name: 'NPC制作レビュー' })
     await expect(report.getByRole('heading', { name: '住民1', exact: true })).toBeVisible()

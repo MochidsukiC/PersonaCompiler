@@ -69,12 +69,14 @@ test('switches organization and economy tabs without accumulating connected back
     }, { original, simulation, preparation, map: draft.map })
     await expect(page.getByTestId('world-map')).toBeVisible()
     for (let cycle = 0; cycle < 3; cycle++) {
-      for (const tab of ['組織', '経済', 'ワールド', '出来事', '経済', '組織', 'ワールド']) {
+      for (const tab of ['組織', '概要', '経済', 'ワールド', '出来事', '概要', '経済', '組織', 'ワールド']) {
         await page.getByRole('button', { name: tab, exact: true }).click()
-        await expect(page.locator('.backend-panel')).toHaveCount(tab === '組織' || tab === '出来事' ? 0 : 1)
+        await expect(page.locator('.backend-panel')).toHaveCount(tab === '概要' ? 1 : 0)
         await expect(page.getByRole('region', { name: '組織一覧', exact: true })).toHaveCount(tab === '組織' ? 1 : 0)
         await expect(page.getByRole('region', { name: '経済', exact: true })).toHaveCount(tab === '経済' ? 1 : 0)
         await expect(page.getByTestId('world-map')).toHaveCount(tab === 'ワールド' ? 1 : 0)
+        await expect(page.getByRole('region', { name: '概要', exact: true })).toHaveCount(tab === '概要' ? 1 : 0)
+        if (tab === '概要') await expect(page.getByRole('heading', { name: '概要', exact: true })).toBeInViewport()
         if (tab === '組織') await expect(page.getByText('まだ組織はありません。対応する住民が生活中に設立すると、ここに表示されます。')).toBeVisible()
         if (tab === '経済') await expect(page.getByRole('heading', { name: '経済・アイテム' })).toBeInViewport()
         if (tab === 'ワールド') await expect(page.getByTestId('world-map')).toBeInViewport()
