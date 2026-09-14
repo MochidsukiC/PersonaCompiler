@@ -28,7 +28,8 @@
 | `315e50a` | Compilation入力の外部変更でmanifestへ誤った根拠hashを記録する不具合を修正 | [22](22-compilation-input-provenance.md) |
 | `c9d402e` | 親へ渡す出生・Compilation入力の変更を検出し、不整合な結果の採用を停止 | [23](23-production-input-integrity.md) |
 | `8457234` | 成果物の照合結果を、manifestのhash・照合時刻付きのMarkdownとJSONでコピー | [24](24-package-inspection-report.md) |
-| `git log --oneline -- improvements/25-offline-review-demo.md`で確認 | 合成資料でレビュー比較・根拠確認・成果物照合を試せる専用デモコマンド | [25](25-offline-review-demo.md) |
+| `bf60780` | 合成資料でレビュー比較・根拠確認・成果物照合を試せる専用デモコマンド | [25](25-offline-review-demo.md) |
+| `git log --oneline -- improvements/26-preview-retry.md`で確認 | プレビュー失敗後、同じファイルの再選択や専用ボタンから再試行できるよう修正 | [26](26-preview-retry.md) |
 
 各コミットの直後に差分の自己レビューを実施しました。機能ごとに取り消す場合は、作業ツリーの変更を確認したうえで`git revert <commit>`を使えます。全体を戻す場合は表の下から上の順にrevertしてください。
 
@@ -46,12 +47,13 @@
 - 今回の変更後に生成したCompilationには「制作レビュー」が付きます。既存出力は自動で再生成していません。
 - 同じNPCの制作レビューが2つあれば、「別の出力と比較」で再生成による変更を確認できます。比較そのものにモデル推論は不要です。
 - 「比較レポートをコピー」で変更内容・両側の根拠・参照情報を制作記録へ持ち出せます。
+- ファイルの読み込みエラーが出た場合、原因を解消してから同じファイルの再選択か「プレビューを再読み込み」で再試行できます。
 - 実モデルを使わない操作検証は`npx playwright test tests/e2e/lifecycle.spec.ts tests/e2e/life.spec.ts`で実行できます（先にbuild）。これは合成fixtureであり、実モデルの生成品質を示すデモではありません。
 - 実行済み検証のログとスクリーンショットは`.local/polish-20260914/`にあります。
 
 ## 検証の結論と残る範囲
 
-最終ソースでbuild・typecheck・lint成功、単体55・backend139・CLI/TUI接続8・保存4・Electron E2E19の計225件PASS。最新の終了コードとログは[24](24-package-inspection-report.md)に記載しています。不正なRPC受信と制作入力の外部変更による不具合を修正し、成果物照合結果のコピー機能を追加しました。最新機能はdemo・codex両モードで実クリップボードの内容と画面を検証しています。
+最新のプレビュー修正でbuild・typecheck・lint成功、単体55・backend139・Electron E2E21の計215件PASS。終了コード・対象範囲とログは[26](26-preview-retry.md)に記載しています。CLI/TUI接続8・保存単独4件の直近の実行証拠は[24](24-package-inspection-report.md)で、今回変更していない範囲の単独検証は繰り返していません。[25](25-offline-review-demo.md)では専用デモの比較・照合・実クリップボード、通常表示と終了も検証しました。
 
 別件として[17](17-workspace-dot-prefix.md)のCLI検証では`life-tools.test.ts`のworkerが終了コード`3221226505`で異常終了しました。該当テスト単独と正式CLI検証の再実行は成功していますが、native異常終了は未解決です。今回のRPC形式検証によって解消したとは扱いません。
 

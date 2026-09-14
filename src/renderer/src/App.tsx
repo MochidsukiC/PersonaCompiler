@@ -29,6 +29,7 @@ export default function App() {
   const [selectedFile, setSelectedFile] = useState<string | null>(null)
   const [preview, setPreview] = useState<FilePreview | null>(null)
   const [previewError, setPreviewError] = useState<string | null>(null)
+  const [previewRequest, setPreviewRequest] = useState(0)
   const [error, setError] = useState<string | null>(null)
   const [busy, setBusy] = useState(false)
   const [leftWidth, setLeftWidth] = useState(230)
@@ -64,7 +65,7 @@ export default function App() {
       if (!cancelled) { setPreview(value); setPreviewError(null) }
     }, reason => { if (!cancelled) setPreviewError(String(reason)) })
     return () => { cancelled = true }
-  }, [selectedFile, previewVersion])
+  }, [selectedFile, previewVersion, previewRequest])
 
   const openAgent = useCallback((id: string) => {
     setTabs(previous => previous.includes(id) ? previous : [...previous, id])
@@ -73,9 +74,12 @@ export default function App() {
     if (sessionId) setUnread(previous => { const next = new Set(previous); next.delete(sessionId); return next })
   }, [])
   const openFile = useCallback((file: string) => {
-    if (file === selectedFile) return
+    if (file === selectedFile) {
+      if (!previewError) return
+      setPreviewRequest(value => value + 1)
+    }
     setSelectedFile(file); setPreview(null); setPreviewError(null)
-  }, [selectedFile])
+  }, [selectedFile, previewError])
   const closeTab = (id: string) => {
     const next = tabs.filter(tab => tab !== id)
     setTabs(next)
@@ -118,7 +122,7 @@ export default function App() {
         {devOpen && workspace.backend && <DevPanel key={`dev:${runId}`} view={workspace.backend} onError={report} />}
         {state.simulation?.lifecycle && !selectedFile && mode !== 'events' && <LifecyclePanel simulation={state.simulation} backend={workspace.backend} onAgent={openAgent} onFile={openFile} onError={report} />}
         {workspace.backend && !selectedFile && mode !== 'events' && <BackendPanel key={runId} view={workspace.backend} onError={report} />}
-        {selectedFile ? <div className="file-preview"><div className="file-preview-heading"><span title={selectedFile}>{selectedFile}</span><button className="icon-button" aria-label="外部エディターで開く" title="外部エディターで開く" onClick={() => void window.persona.openExternal(selectedFile).catch(report)}><ExternalLink size={15} /></button><button className="icon-button" aria-label="Windows Explorerで表示" title="Windows Explorerで表示" onClick={() => void window.persona.reveal(selectedFile).catch(report)}><FolderOpen size={15} /></button></div>{previewError && <div className="preview-error">{previewError} {preview && '前回の内容を表示しています。'}</div>}{preview ? preview.kind === 'image' ? <img className="image-preview" alt={selectedFile} src={preview.content} /> : selectedFile.startsWith('compilation/') && selectedFile.endsWith('/review.json') ? <CharacterReview key={`${selectedFile}:${preview.hash}`} content={preview.content} currentPath={selectedFile} currentHash={preview.hash} runId={workspace.state.runId} files={workspace.files} fileVersions={workspace.fileVersions} workspaceVersion={workspace.version} /> : /^compilation\/[^/]+\/npcs\/[^/]+\/manifest\.json$/.test(selectedFile) ? <PackageInspection key={`${selectedFile}:${preview.hash}`} manifestPath={selectedFile} content={preview.content} /> : <pre data-testid="file-content">{preview.content}</pre> : !previewError && <p className="muted">読み込み中…</p>}<div className="preview-footer">READ ONLY VIEW <span>編集は外部エディターへ · 保存すると自動反映</span></div></div>
+        {selectedFile ? <div className="file-preview"><div className="file-preview-heading"><span title={selectedFile}>{selectedFile}</span><button className="icon-button" aria-label="外部エディターで開く" title="外部エディターで開く" onClick={() => void window.persona.openExternal(selectedFile).catch(report)}><ExternalLink size={15} /></button><button className="icon-button" aria-label="Windows Explorerで表示" title="Windows Explorerで表示" onClick={() => void window.persona.reveal(selectedFile).catch(report)}><FolderOpen size={15} /></button></div>{previewError && <div className="preview-error" role="alert">{previewError} {preview && '前回の内容を表示しています。'} <button className="button compact" onClick={() => openFile(selectedFile)}>プレビューを再読み込み</button></div>}{preview ? preview.kind === 'image' ? <img className="image-preview" alt={selectedFile} src={preview.content} /> : selectedFile.startsWith('compilation/') && selectedFile.endsWith('/review.json') ? <CharacterReview key={`${selectedFile}:${preview.hash}`} content={preview.content} currentPath={selectedFile} currentHash={preview.hash} runId={workspace.state.runId} files={workspace.files} fileVersions={workspace.fileVersions} workspaceVersion={workspace.version} /> : /^compilation\/[^/]+\/npcs\/[^/]+\/manifest\.json$/.test(selectedFile) ? <PackageInspection key={`${selectedFile}:${preview.hash}`} manifestPath={selectedFile} content={preview.content} /> : <pre data-testid="file-content">{preview.content}</pre> : !previewError && <p className="muted">読み込み中…</p>}<div className="preview-footer">READ ONLY VIEW <span>編集は外部エディターへ · 保存すると自動反映</span></div></div>
           : mode === 'events' && state.simulation ? <EventTimeline key={runId} runId={state.runId} historyAvailable={!!workspace.backend?.persistence} simulation={state.simulation} onAgent={openAgent} />
           : state.map ? <WorldView state={state} mode={mode === 'events' ? 'map' : mode} onAgent={openAgent} staleRelations={workspace.staleRelations} onFile={openFile} />
           : state.stage === 'draft' && (!workspace.backend || workspace.backend.preparation.sessions.length > 0) ? <Preparation real={!!workspace.backend} busy={busy || (!!workspace.backend && (!workspace.backend.authenticated || workspace.backend.preparation.busy))} onPrepare={(description, images) => void action(() => window.persona.prepare({ description, images }))} onError={report} />
