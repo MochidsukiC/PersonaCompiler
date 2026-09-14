@@ -49,3 +49,18 @@ Get-Content .local/native-diagnostics/life-tools.log.stdout.log
 終了コードは、通常完了0、native例外検出または対象プログラムの失敗1、起動・イベント待受処理の失敗2、180秒の診断期限超過124です。例外検出後のcontext・dump・symbol採取の失敗はログに個別に記録するため、終了コードだけで採取成功とは判断しないでください。期限超過時は、この診断で起動・追跡しているプロセスだけを終了します。通常のテスト設定・タイムアウトは変更しません。
 
 デバッガーはタイミングを変えるため、再発しなかったことは修正の証明になりません。シンボルがないモジュールは名前とオフセットまでの記録になり、関数名を保証しません。アプリ固有の意図的なbreakpointを検証する用途は対象外です。
+
+## 処理段階とNode自体の終了競合
+
+`life-tools.test.ts`は、fixtureの`stages.jsonl`へUTC時刻・worker PID・処理名を同期追記します。再接続・再開・Tool完了待ち・最終assertion・レポート保存・各リソース終了のbegin/endを確認できます。実行中の異常終了では、endがない処理名が停止区間を絞る手がかりです。非同期native処理は同時進行するため、その処理が原因だと断定する記録ではありません。記録自体もタイミングに影響します。
+
+`node-fetch-exit-probe.mjs`は、[Node issue #56645](https://github.com/nodejs/node/issues/56645)と[修正PR #61999](https://github.com/nodejs/node/pull/61999)の条件をlocalhostだけで試す比較用fixtureです。ローカルのリダイレクト上限到達後、意図的に`process.exit(0)`を呼びます。通常のアプリ起動・テストゲートには組み込んでいません。
+
+```powershell
+& $diagnosticExe .local/native-diagnostics/node-fetch-exit.log .local/native-diagnostics $nodeExe diagnostics/node-fetch-exit-probe.mjs
+$LASTEXITCODE
+Get-Content .local/native-diagnostics/node-fetch-exit.log
+Get-Content .local/native-diagnostics/node-fetch-exit.log.stdout.log
+```
+
+既知の競合が発生した場合は診断ツールがexit 1となり、対象Nodeの`C0000409`、`uv_async_send`を含むstack、標準エラーの`UV_HANDLE_CLOSING` assertionを確認できます。競合が発生しなければexit 0です。Node 24.15.0での再現と24.21.0の比較結果は[調査記録21](../improvements/21-native-node-shutdown.md)に記載しています。元のCLIテストのnative異常終了との同一性はまだ確認できていません。

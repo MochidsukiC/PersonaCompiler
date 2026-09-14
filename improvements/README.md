@@ -23,7 +23,8 @@
 | `750f852` | `..notes.md`等の正当な名前をワールド外と誤判定する不具合を修正 | [17](17-workspace-dot-prefix.md) |
 | `d27e9c3` | native例外のコード・stack・dumpを採取する診断手段。異常終了自体は未解決 | [18](18-native-crash-diagnostics.md) |
 | `b68953d` | 不正なRPC受信による端末中継の未処理例外を修正 | [19](19-terminal-rpc-envelope.md) |
-| `git log --oneline -- improvements/20-rpc-failed-connection.md`で確認 | RPCの異常受信後に接続が残り、後続処理が動く不具合を修正 | [20](20-rpc-failed-connection.md) |
+| `a94eee2` | RPCの異常受信後に接続が残り、後続処理が動く不具合を修正 | [20](20-rpc-failed-connection.md) |
+| `git log --oneline -- improvements/21-native-node-shutdown.md`で確認 | Node単体の終了競合を分離再現し、CLIテストへ段階記録を追加 | [21](21-native-node-shutdown.md) |
 
 各コミットの直後に差分の自己レビューを実施しました。機能ごとに取り消す場合は、作業ツリーの変更を確認したうえで`git revert <commit>`を使えます。全体を戻す場合は表の下から上の順にrevertしてください。
 
@@ -50,6 +51,8 @@
 端末の同時終了時のnative競合には[12](12-native-terminal-exit.md)で上流修正版を適用し、[13](13-terminal-resource-cleanup.md)でworker残留を修正してクリーンインストールも検証しました。さらに起動が遅い端末の停止時に未確定PIDへシグナルを送る不具合を修正しました。今回再発した`3221226505`の直接のstackは未取得です。過去の全異常終了を解消したとは断定せず、既存のテスト除外・閾値・警告設定も変更していません。
 
 [18](18-native-crash-diagnostics.md)では、意図的なfixture例外でnative stackの採取手段を検証しました。診断配下のCLI8件と保存4件の並行実行、対象CLIテスト最大5回とE2E18件の並行実行では再発しませんでした。これは原因解消の証明ではなく、次の再発を調査するための手段と記録です。
+
+[21](21-native-node-shutdown.md)で、Node 24.15.0単体のlocalhost最小fixtureから`C0000409`と`uv_async_send`のassertionを再現し、stack・dumpを採取しました。同じ条件は比較用Node 24.21.0とElectron 44.3.0のNodeモードで正常終了しました。元のCLI失敗との同一性は未確認です。CLIテストに段階記録を追加し、通常Node・比較用Nodeで接続8件ずつ成功しました。インストール済みNodeやアプリ本体は変更していません。
 
 追加機能はローカルfixtureで保存・IPC・画面操作まで検証できたため、ユーザーの最新指示に従って実モデルの試運転はスキップしました。ChatGPT推論・APIキーの使用は開始していません。既存ワールドの削除も実施していません。今後、実モデルが必要な検証をする場合は全モデルを5.6 Luna / low固定とし、通常の機能確認は3日（12ターン）を基準にします。
 

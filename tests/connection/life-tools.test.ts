@@ -1,6 +1,7 @@
 import { expect, it } from 'vitest'
 import http from 'node:http'
 import path from 'node:path'
+import { appendFileSync } from 'node:fs'
 import { mkdir, mkdtemp, writeFile } from 'node:fs/promises'
 import { setTimeout as delay } from 'node:timers/promises'
 import { CodexRuntime, type RuntimeToolCall } from '../../src/backend/runtime'
@@ -11,6 +12,16 @@ import type { SessionBinding } from '../../src/core/contracts'
 it('routes dynamic tools with a real remote TUI, steers inference and compacts the same conversation', async () => {
   await mkdir('.local/tests', { recursive: true })
   const root = await mkdtemp(path.resolve('.local/tests/life-tools-'))
+  const stages = path.join(root, 'stages.jsonl')
+  const mark = (phase: string) => appendFileSync(stages, `${JSON.stringify({ time: new Date().toISOString(), pid: process.pid, phase })}\n`)
+  const stage = async <T>(phase: string, run: () => Promise<T>): Promise<T> => {
+    mark(`${phase}/begin`)
+    const result = await run()
+    mark(`${phase}/end`)
+    return result
+  }
+  mark('fixture/created')
+  console.info(`Life tool fixture stages: ${stages}`)
   const requests: { url: string; body: string }[] = []
   let held: http.ServerResponse | null = null
   const finish = (res: http.ServerResponse, item: Record<string, unknown>) => {
@@ -66,7 +77,7 @@ it('routes dynamic tools with a real remote TUI, steers inference and compacts t
   }
   const completed = (id: string) => events.some(e => e.method === 'turn/completed' && JSON.stringify(e.params).includes(id))
   try {
-    await runtime.connect('chatgpt')
+    await stage('initial-connect', () => runtime.connect('chatgpt'))
     binding.threadId = await runtime.create(binding, 'Use getSituation when asked. Keep this conversation.', { tools: [{ type: 'function', name: 'getSituation', description: 'Read the local situation.', inputSchema: { type: 'object', properties: {}, additionalProperties: false } }], disableEnvironment: true })
     await runtime.seed(binding, 'Initial life state.')
     binding.seedPersisted = true
@@ -82,7 +93,7 @@ it('routes dynamic tools with a real remote TUI, steers inference and compacts t
     expect(calls).toHaveLength(1)
     expect(calls[0]).toMatchObject({ threadId: binding.threadId, tool: 'getSituation' })
     expect(requests.some(r => r.body.includes('LIFE_TOOL_RESULT'))).toBe(true)
-    await terminals.attach(binding)
+    await stage('initial-terminal-attach', () => terminals.attach(binding))
     await wait(async () => (await terminals.snapshot('npc')).data.includes('LIFE_PROBE_DONE'), 'TUI history loaded')
     await terminals.input('npc', '端末の生活Tool')
     await delay(300)
@@ -96,16 +107,18 @@ it('routes dynamic tools with a real remote TUI, steers inference and compacts t
     await wait(() => completed(active), 'steered completion')
     await runtime.interrupt(binding.threadId, active)
     expect(requests.some(r => r.body.includes('誘導メッセージ'))).toBe(true)
-    await runtime.compact(binding.threadId)
+    await stage('compact-request', () => runtime.compact(binding.threadId!))
     await wait(() => events.some(e => e.method === 'item/completed' && JSON.stringify(e.params).includes('contextCompaction')), 'native compact')
     await wait(() => events.filter(e => e.method === 'turn/completed').length >= 4, 'compact completion')
-    await terminals.dispose()
-    await runtime.connect('chatgpt')
-    await runtime.resume(binding)
+    mark('compact-completed')
+    await stage('initial-terminals-dispose', () => terminals.dispose())
+    await stage('reconnect', () => runtime.connect('chatgpt'))
+    await stage('resume', () => runtime.resume(binding))
     expect((await runtime.conversation(binding.threadId)).find(turn => turn.id === first)?.items).toEqual(firstItems)
-    await terminals.attach(binding)
-    const resumed = await runtime.startTurn(binding, 'CALL_LIFE_TOOL')
-    await wait(() => completed(resumed), 'resumed tools')
+    await stage('resumed-terminal-attach', () => terminals.attach(binding))
+    const resumed = await stage('resumed-turn-start', () => runtime.startTurn(binding, 'CALL_LIFE_TOOL'))
+    await stage('resumed-turn-completion', () => wait(() => completed(resumed), 'resumed tools'))
+    mark('final-assertions/begin')
     expect(calls).toHaveLength(3)
     expect(calls.every(call => call.threadId === binding.threadId)).toBe(true)
     for (const request of requests) {
@@ -116,12 +129,14 @@ it('routes dynamic tools with a real remote TUI, steers inference and compacts t
     }
     expect(errors).toEqual([])
     expect(events.filter(e => e.method === 'runtime/error')).toEqual([])
+    mark('final-assertions/end')
   } finally {
-    await writeFile(path.join(root, 'probe.json'), JSON.stringify({ requests, events, calls, errors }, null, 2))
-    if (terminals.has('npc')) await writeFile(path.join(root, 'terminal.json'), JSON.stringify(await terminals.snapshot('npc')))
-    await terminals.dispose()
-    await runtime.close()
+    await stage('probe-save', () => writeFile(path.join(root, 'probe.json'), JSON.stringify({ requests, events, calls, errors }, null, 2)))
+    if (terminals.has('npc')) await stage('terminal-save', async () => writeFile(path.join(root, 'terminal.json'), JSON.stringify(await terminals.snapshot('npc'))))
+    await stage('final-terminals-dispose', () => terminals.dispose())
+    await stage('runtime-close', () => runtime.close())
     provider.closeAllConnections()
-    await new Promise<void>((resolve, reject) => provider.close(error => error ? reject(error) : resolve()))
+    await stage('provider-close', () => new Promise<void>((resolve, reject) => provider.close(error => error ? reject(error) : resolve())))
+    mark('fixture/cleanup-completed')
   }
 })
