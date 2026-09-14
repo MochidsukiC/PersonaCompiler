@@ -92,6 +92,16 @@ test('shows NPC memory details and directed historical relationship evidence in 
     await expect(relation).not.toContainText('遅れて届いた古い根拠')
     await expect(relation).not.toContainText('楓の本を借りた')
     await page.screenshot({ path: test.info().outputPath('memory-relationship-updated.png') })
+    const empty = await page.evaluate(() => window.persona.snapshot())
+    await app.evaluate(({ BrowserWindow }, snapshot) => {
+      snapshot.state.frame.day = 5
+      snapshot.state.relationships = { observedAt: new Date().toISOString(), observedTurn: 18, day: 5, relations: [] }
+      snapshot.version++
+      BrowserWindow.getAllWindows()[0].webContents.send('persona:event', { type: 'workspace', snapshot })
+    }, empty)
+    await expect(page.getByTestId('relationship-graph').getByText('まだ関係が記録されていません', { exact: true })).toBeVisible()
+    await expect(page.getByTestId('relationship-graph')).toContainText('日数だけでは増えません')
+    await expect(page.getByTestId('relation-detail')).toHaveCount(0)
     expect(errors).toEqual([])
   } finally { await app.close() }
 })

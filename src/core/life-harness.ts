@@ -664,7 +664,7 @@ export class LifeHarness {
     if (this.cognition && (job.kind === 'consolidation' || job.reminders?.length)) {
       if (job.kind === 'consolidation') {
         const owner = this.cognition.owner(job.agentId)
-        text += `\n${JSON.stringify({ candidates: owner.candidates, records: owner.records, relations: owner.relations })}`
+        text += `\n${JSON.stringify({ memorySources: this.cognition.availableSources(job.agentId), candidates: owner.candidates, records: owner.records, relations: owner.relations })}`
       }
       if (job.reminders?.length) text += `\n条件から思い出した自分の予定です。実行するかは自分で判断してください。\n${JSON.stringify(job.reminders.map(ref => this.cognition!.detail(job.agentId, ref.memoryId, ref.revision).record))}`
       await this.update(d => { this.memoryChanges.push({ archive: [{ kind: 'memoryInput', value: { jobId: job.id, ownerId: job.agentId, turn: d.world.turn, text } }] }) })
@@ -1020,7 +1020,8 @@ export class LifeHarness {
       return reply({ consolidated: true, instruction: 'この推論を終了してください。その後にCompactを実行します。' })
     }
     const boundaryNotice = d.world.phase === 'between' && d.jobs.some(j => j.agentId === agentId && j.kind === 'notice' && ['requested', 'running'].includes(j.status))
-    if (this.cognition && actor.activity === 'sleeping' && !boundaryNotice) throw new LifeRuleError('睡眠・記憶整理中は生活行動を受け付けません')
+    const consolidationRemember = tool === 'remember' && actor.activity === 'sleeping' && this.cognition?.owner(agentId).consolidation === 'running' && d.jobs.some(j => j.agentId === agentId && j.kind === 'consolidation' && ['requested', 'running'].includes(j.status))
+    if (this.cognition && actor.activity === 'sleeping' && !boundaryNotice && !consolidationRemember) throw new LifeRuleError('睡眠・記憶整理中は生活行動を受け付けません')
     if (tool === 'getSituation') { lifeToolSchemas.getSituation.parse(input); return reply(this.situation(d, agentId)) }
     if (tool === 'setInitialPosition') {
       const value = lifeToolSchemas.setInitialPosition.parse(input)
@@ -1030,7 +1031,7 @@ export class LifeHarness {
       this.event(d, actor, 'entry', '初期位置を選びました')
       return reply({ position: actor.position, instruction: '位置を確定しました。この推論を終了し、全員の位置確定後の生活開始通知を待ってください。' })
     }
-    if (!(boundaryNotice && ['remember', 'remindMe'].includes(tool)) && (d.world.phase !== 'activity' || actor.activity !== 'active')) throw new LifeRuleError(`現在は行動できません: ${d.world.phase}/${actor.activity}`)
+    if (!consolidationRemember && !(boundaryNotice && ['remember', 'remindMe'].includes(tool)) && (d.world.phase !== 'activity' || actor.activity !== 'active')) throw new LifeRuleError(`現在は行動できません: ${d.world.phase}/${actor.activity}`)
     if (d.world.lifecycle && ['marry', 'createHome', 'consentHome'].includes(tool)) return this.familyTool(d, agentId, tool, input)
     if (d.world.economy && Object.hasOwn(economyToolSchemas, tool)) {
       const outcome = applyEconomyTool(d.world, agentId, tool, input)

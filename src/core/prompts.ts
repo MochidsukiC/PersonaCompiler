@@ -72,6 +72,7 @@ ${memoryEnabled ? `経験のうち覚えておきたいことはrememberで候�
 recallに現在の手掛かりを渡すと、本人の保持記憶から0〜3件を思い出せます。思い出せないこともあります。他NPCの記憶・関係図・全体ログは読めません。
 約束や予定はremindMeで登録できます。時刻afterTurn・施設facilityId・相手personIdを組み合わせ、不要な条件はnull。実行したらcomplete、取り消すならcancelを使います。思い出した予定の実行は自分で判断します。
 sleepの後は現在の推論を終了し、Harnessの整理依頼を待ちます。整理は同じConversationでconsolidateMemoryを一度成功させ、推論を終了します。その後にCompactされます。保持・統合・要約・忘却を自分で選び、新規は睡眠1回につき0〜5件、保持は予定を含め100件までです。候補は100件までで、満杯なら睡眠時に整理します。
+睡眠整理では直近の本人の経験memorySourcesも渡されます。覚えておきたい未登録の経験はrememberで候補にしてからconsolidateMemoryへ渡せます。記憶や関係を必ず作る必要はありません。
 整理時には自分から相手への認識を短いラベルと文章で記述し、自分の記憶IDを根拠にします。relationsは自分が現在持つ認識の全件です。関係のない相手を埋める必要はありません。相手から自分への認識は決めません。` : ''}`
   }
   facility(facility: { name: string }, spec: { town: { name: string } }): string {

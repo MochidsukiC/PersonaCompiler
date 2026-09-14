@@ -159,6 +159,42 @@ it('consolidates in the same Conversation before Compact and rejects partial or 
   await vi.waitFor(() => expect(compacted).toEqual(['npc0']))
   expect(h.memoryInspection('npc0').progress.consolidation).toBe('complete')
 })
+it('lets a sleeping NPC select its own unregistered experiences before consolidating a first relationship', async () => {
+  const { h, call, starts, finish, compacted, changes } = await world()
+  await call('npc0', 'sendMessage', { text: '本を貸すので読んでください', volume: 'high' })
+  await vi.waitFor(() => expect(starts.some(s => s.id === 'npc1' && s.text.includes('heardSpeech'))).toBe(true))
+  expect(h.memoryInspection('npc1').candidates).toEqual([])
+  expect(h.memoryInspection('npc1').records).toEqual([])
+  await call('npc1', 'sleep')
+  expect((await call('npc1', 'remember', { ...content, sourceIds: ['initial:npc1'] })).success).toBe(false)
+  finish('npc1')
+  await vi.waitFor(() => expect(starts.some(s => s.id === 'npc1' && s.text.includes('睡眠時の記憶整理'))).toBe(true))
+  const prompt = starts.find(s => s.id === 'npc1' && s.text.includes('睡眠時の記憶整理'))!.text
+  const materials = JSON.parse(prompt.slice(prompt.lastIndexOf('\n') + 1)) as { memorySources: { id: string; ownerId: string; kind: string; text: string }[]; candidates: unknown[]; records: unknown[] }
+  expect(materials.candidates).toEqual([])
+  expect(materials.records).toEqual([])
+  expect(materials.memorySources.length).toBeLessThanOrEqual(30)
+  expect(materials.memorySources.every(s => s.ownerId === 'npc1')).toBe(true)
+  const source = materials.memorySources.find(s => s.kind === 'received' && s.text.includes('本を貸す'))!
+  expect(source).toBeDefined()
+  expect((await call('npc1', 'remember', content)).success).toBe(false)
+  expect((await call('npc1', 'sendMessage', { text: 'ありがとう', volume: 'high' })).success).toBe(false)
+  const chosen = { ...content, text: '本を貸してもらえた', sourceIds: [source.id], cues: { ...content.cues, people: ['npc0'] } }
+  const accepted = await call('npc1', 'remember', chosen, 'sleep-candidate')
+  expect(accepted.success).toBe(true)
+  expect(await call('npc1', 'remember', chosen, 'sleep-candidate')).toEqual(accepted)
+  expect(h.memoryInspection('npc1').candidates).toHaveLength(1)
+  expect(h.memoryInspection('npc1').records).toEqual([])
+  const candidateId = JSON.parse(accepted.contentItems[0].text).candidateId as string
+  expect((await call('npc1', 'consolidateMemory', { memories: [{ ...chosen, id: null, candidateIds: [candidateId], mergeIds: [], kind: 'episodic' }], forgetIds: [], relations: [{ target: 'npc0', label: '親切な人', description: '本を貸してくれた', memoryIds: [candidateId] }] })).success).toBe(true)
+  expect((await call('npc1', 'remember', chosen)).success).toBe(false)
+  const relation = h.memoryRelations()!.find(r => r.source === 'npc1')!
+  expect(relation.target).toBe('npc0')
+  expect(h.memoryDetail('npc1', relation.evidence[0].memoryId, relation.evidence[0].revision).sources.map(s => s.id)).toEqual([source.id])
+  expect(changes.some(c => c.history.some(r => r.kind === 'memoryInput' && r.value.ownerId === 'npc1' && r.value.text.includes(source.id)))).toBe(true)
+  finish('npc1')
+  await vi.waitFor(() => expect(compacted).toContain('npc1'))
+})
 it('stops explicitly when consolidation was not called', async () => {
   const { h, call, finish, starts, compacted } = await world()
   await call('npc0', 'sleep'); finish('npc0')
