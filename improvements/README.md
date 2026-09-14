@@ -48,7 +48,8 @@
 | `a66ba3f` | 制作レビューに同名の区分があると検索対象外の設定が画面に残る不具合を修正 | [42](42-review-duplicate-sections.md) |
 | `9c4510f` | 読み込み済みの全設定・全根拠・指針・Runtime Promptを元資料のhash付きでコピー | [43](43-full-review-export.md) |
 | `fb862fa` | 関係の根拠が更新された後、新しい根拠一覧にない旧記憶が詳細に残る不具合を修正 | [44](44-current-relation-evidence.md) |
-| `git log --oneline -- improvements/45-package-candidate-failure-evidence.md`で確認 | 比較候補の欠落時に、画面・候補・公開ファイル一覧・実ディスクのパスを保存 | [45](45-package-candidate-failure-evidence.md) |
+| `4476b63` | 比較候補の欠落時に、画面・候補・公開ファイル一覧・実ディスクのパスを保存 | [45](45-package-candidate-failure-evidence.md) |
+| `git log --oneline -- improvements/46-world-view-run-boundary.md`で確認 | 同じ施設IDを持つ別ワールドへ切り替えたとき、旧ワールドの施設選択・表示設定を初期化 | [46](46-world-view-run-boundary.md) |
 
 各コミットの直後に差分の自己レビューを実施しました。機能ごとに取り消す場合は、作業ツリーの変更を確認したうえで`git revert <commit>`を使えます。全体を戻す場合は表の下から上の順にrevertしてください。
 
@@ -75,6 +76,8 @@
 - 実行済み検証のログとスクリーンショットは`.local/polish-20260914/`にあります。
 
 ## 検証の結論と残る範囲
+
+[46](46-world-view-run-boundary.md)で、同じ施設IDを持つ別ワールドへ切り替えた際に旧ワールドの施設選択・表示設定が残る不具合を修正しました。同じrun内の更新では選択を維持します。build・typecheck・lint、単体71・backend170・対象画面1件が成功しました。全体E2Eは33件PASS・比較候補欠落で1件FAILです。45の診断から、欠落したmanifestは実ディスクに存在する一方、backendの公開一覧とfileVersionsにないと判明しました。監視から一覧反映までの経路を継続調査します。全体検証をPASSとは扱っていません。
 
 [45](45-package-candidate-failure-evidence.md)で、比較候補の件数assertion失敗時に画面と3種の一覧を添付するようにしました。typecheck・lint、正式な比較2件が成功し、意図的な失敗で元のassertionと4種の資料が残ることを確認しました。監視診断の30回では全パスが一致しましたが、前回の候補欠落そのものは再現せず未解決です。初回の診断はmanifest件数だけを待っていたため全パス照合で1回不一致があり、採取条件を修正した経緯も記録しています。アプリ本体の変更はなく、全体検証は再実行していません。
 

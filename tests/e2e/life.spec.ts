@@ -35,7 +35,7 @@ test('residential 3D, two-way voice boundaries, terminal selection and world con
       snapshot.state.agents = fixture.simulation.actors.map(a => ({ id: a.id, sessionId: a.id, name: a.name, parentId: null, role: 'npc', status: 'running', color: '#b0c0f4' }))
       const steps: boolean[] = []
       const publish = () => { snapshot.version++; BrowserWindow.getAllWindows()[0].webContents.send('persona:event', { type: 'workspace', snapshot }) }
-      ipcMain.on('test:world-update', (_event, update: { speech?: { actorId: string; text: string; recipients?: string[] }[]; dimensions?: boolean; revision?: boolean; move?: boolean }) => {
+      ipcMain.on('test:world-update', (_event, update: { speech?: { actorId: string; text: string; recipients?: string[] }[]; dimensions?: boolean; revision?: boolean; move?: boolean; branch?: boolean }) => {
         const simulation = snapshot.state.simulation!
         for (const speech of update.speech ?? []) {
           const actor = simulation.actors.find(a => a.id === speech.actorId)!
@@ -44,6 +44,7 @@ test('residential 3D, two-way voice boundaries, terminal selection and world con
         if (update.dimensions) simulation.facilities.find(f => f.locationId === 'home')!.dimensions.x++
         if (update.move) simulation.actors[0].position!.y++
         if (update.revision) { snapshot.state.map!.revision++; snapshot.state.frame.mapRevision = snapshot.state.map!.revision }
+        if (update.branch) { snapshot.state.runId = 'branched-world'; snapshot.root += '-branch-fixture'; snapshot.state.map!.name = '分岐後の検証ワールド' }
         simulation.revision++; publish()
       })
       for (const channel of ['snapshot', 'backend-status', 'start-simulation', 'terminal-snapshot', 'terminal-resize', 'pause', 'resume']) ipcMain.removeHandler(`persona:${channel}`)
@@ -174,6 +175,25 @@ test('residential 3D, two-way voice boundaries, terminal selection and world con
     await page.screenshot({ path: test.info().outputPath('event-timeline.png') })
     await page.getByRole('button', { name: 'ワールド', exact: true }).click()
     await expect(page.getByTestId('world-map')).toBeVisible()
+    await page.getByRole('button', { name: 'homeの内部を見る' }).click()
+    await page.getByRole('button', { name: '施設内の住民0を選択' }).click()
+    await page.getByLabel('声量プレビュー').selectOption('high')
+    await page.getByLabel('表示する高さ上限').fill('0')
+    await page.getByRole('button', { name: '住宅1 family-a' }).click()
+    await app.evaluate(({ ipcMain }) => ipcMain.emit('test:world-update', null, { revision: true }))
+    await expect(page.getByLabel('声量プレビュー')).toHaveValue('high')
+    await expect(page.getByLabel('表示する高さ上限')).toHaveValue('0')
+    await expect(interior.locator('.interior-homes .selected')).toHaveText('住宅1family-a')
+    await app.evaluate(({ ipcMain }) => ipcMain.emit('test:world-update', null, { branch: true }))
+    await expect(page.locator('.project-title')).toContainText('分岐後の検証ワールド')
+    await expect(interior).toHaveCount(0)
+    await expect(page.getByTestId('world-map')).toBeVisible()
+    await page.getByRole('button', { name: 'homeの内部を見る' }).click()
+    await expect(page.getByLabel('声量プレビュー')).toHaveValue('medium')
+    await expect(page.getByLabel('表示する高さ上限')).toHaveValue('2')
+    await expect(interior.locator('.interior-homes .selected')).toHaveCount(0)
+    await expect(page.getByTestId('voice-recipients')).toHaveCount(0)
+    await page.screenshot({ path: test.info().outputPath('branched-world-interior.png') })
     expect(errors).toEqual([])
     await expect(page.getByRole('alert')).toHaveCount(0)
   } finally { await app.close() }
