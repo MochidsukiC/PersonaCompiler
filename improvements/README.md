@@ -43,7 +43,8 @@
 | `3f6b530` | パッケージの全登録ファイルを比較し、追加・削除・内容変更・欠損をレポート化 | [37](37-package-file-comparison.md) |
 | `a0dcb20` | 入力保存中に停止した親の制作処理を、保存後に新たに開始する競合を修正 | [38](38-production-pause-boundary.md) |
 | `ea4446c` | 停止後に開始応答が届いた親の制作処理を中断し、先に完了した成果物は保持 | [39](39-production-late-start-interrupt.md) |
-| `git log --oneline -- improvements/40-backend-worker-stages.md`で確認 | backend workerの最後のテスト段階・PIDを任意の診断設定で同期記録 | [40](40-backend-worker-stages.md) |
+| `5c6152e` | backend workerの最後のテスト段階・PIDを任意の診断設定で同期記録 | [40](40-backend-worker-stages.md) |
+| `git log --oneline -- improvements/41-package-streaming-hash.md`で確認 | 大きな成果物を分割読み込みし、ファイル全量の保持による照合時のメモリ増加を削減 | [41](41-package-streaming-hash.md) |
 
 各コミットの直後に差分の自己レビューを実施しました。機能ごとに取り消す場合は、作業ツリーの変更を確認したうえで`git revert <commit>`を使えます。全体を戻す場合は表の下から上の順にrevertしてください。
 
@@ -69,6 +70,8 @@
 - 実行済み検証のログとスクリーンショットは`.local/polish-20260914/`にあります。
 
 ## 検証の結論と残る範囲
+
+[41](41-package-streaming-hash.md)で成果物のhash計算を分割読み込みへ変更しました。256 MiBの合成ファイルを各1回測定し、ArrayBuffer増加のピークは約256→55 MiB、処理時間は約420→661 msでした。build・typecheck・lint、通常の単体68/backend170件が成功しました。初回E2Eはworkerの`3221226505`で29件PASS・1件FAIL、同じbuildのnative診断下では全30件PASS・例外採取0・期限超過0です。初回のnative異常終了は未解決として記録し、通常実行の安定性を保証する結果とは扱いません。
 
 [40](40-backend-worker-stages.md)で任意のbackend段階記録を追加しました。診断設定の全166件・通常の単体68/backend166件、build・typecheck・lintが成功しました。意図的な失敗とworker自己終了で記録の残り方も確認しています。最初の診断は一時fixtureの対象指定によって全体実行が二重になり、DEVの2件が時間切れでした。対象指定修正後の単独実行は成功しましたが、初回失敗とnative未解決は記録に残しています。今回は診断設定のみの変更で、画面・CLI・保存は再実行していません。
 

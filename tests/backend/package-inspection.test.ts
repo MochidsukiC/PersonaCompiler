@@ -37,6 +37,31 @@ it('reports changed and missing entries and compares fresh bytes when repeated',
   expect((await inspectCharacterPackage(workspace, manifestPath)).files[0].status).toBe('match')
 })
 
+it.each([0, 65537, 2097169])('hashes all %i binary bytes across read boundaries and detects a same-size edit', async size => {
+  const { workspace, directory, manifestPath, manifest } = await setup()
+  const binary = Buffer.alloc(size)
+  for (let index = 0; index < size; index++) binary[index] = index % 251
+  const expectedHash = digest(binary)
+  await workspace.write(`${directory}/asset.bin`, binary)
+  await workspace.write(manifestPath, JSON.stringify({ ...manifest, files: { 'asset.bin': expectedHash } }))
+  expect((await inspectCharacterPackage(workspace, manifestPath)).files).toEqual([
+    { path: 'asset.bin', status: 'match', expectedHash, actualHash: expectedHash, bytes: size }
+  ])
+  if (size > 0) {
+    binary[Math.floor(size / 2)] ^= 0xff
+    await workspace.write(`${directory}/asset.bin`, binary)
+    expect((await inspectCharacterPackage(workspace, manifestPath)).files).toEqual([
+      { path: 'asset.bin', status: 'changed', expectedHash, actualHash: digest(binary), bytes: size }
+    ])
+  }
+})
+
+it('propagates a registered directory read failure instead of reporting a matching or missing file', async () => {
+  const { workspace, manifestPath, manifest } = await setup()
+  await workspace.write(manifestPath, JSON.stringify({ ...manifest, files: { nested: digest('') } }))
+  await expect(inspectCharacterPackage(workspace, manifestPath)).rejects.toMatchObject({ code: 'EISDIR' })
+})
+
 it('rejects invalid manifests, wrong identities and paths outside the package', async () => {
   const { root, workspace, manifestPath, manifest } = await setup()
   await expect(inspectCharacterPackage(workspace, 'persistence/manifest.json')).rejects.toThrow('NPCパッケージ')
