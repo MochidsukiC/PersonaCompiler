@@ -1,0 +1,28 @@
+diff --git a/node_modules/chokidar/handler.js b/node_modules/chokidar/handler.js
+--- a/node_modules/chokidar/handler.js
++++ b/node_modules/chokidar/handler.js
+@@ -541,17 +541,19 @@ export class NodeFsHandler {
+         let closer;
+         const oDepth = this.fsw.options.depth;
+         if ((oDepth == null || depth <= oDepth) && !this.fsw._symlinkPaths.has(realpath)) {
+-            if (!target) {
+-                await this._handleRead(dir, initialAdd, wh, target, dir, depth, throttler);
+-                if (this.fsw.closed)
+-                    return;
+-            }
+             closer = this._watchWithNodeFs(dir, (dirPath, stats) => {
+                 // if current directory is removed, do nothing
+                 if (stats && stats.mtimeMs === 0)
+                     return;
+                 this._handleRead(dirPath, false, wh, target, dir, depth, throttler);
+             });
++            if (!target) {
++                this.fsw._addPathCloser(dir, closer);
++                closer = undefined;
++                await this._handleRead(dir, initialAdd, wh, target, dir, depth, throttler);
++                if (this.fsw.closed)
++                    return;
++            }
+         }
+         return closer;
+     }

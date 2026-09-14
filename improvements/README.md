@@ -50,7 +50,8 @@
 | `fb862fa` | 関係の根拠が更新された後、新しい根拠一覧にない旧記憶が詳細に残る不具合を修正 | [44](44-current-relation-evidence.md) |
 | `4476b63` | 比較候補の欠落時に、画面・候補・公開ファイル一覧・実ディスクのパスを保存 | [45](45-package-candidate-failure-evidence.md) |
 | `3747c75` | 同じ施設IDを持つ別ワールドへ切り替えたとき、旧ワールドの施設選択・表示設定を初期化 | [46](46-world-view-run-boundary.md) |
-| `git log --oneline -- improvements/47-workspace-watch-observations.md`で確認 | 比較候補欠落の監視経路を追加診断。正常時の通知記録・調査範囲・未解決事項を保存 | [47](47-workspace-watch-observations.md) |
+| `bb9f623` | 比較候補欠落の監視経路を追加診断。正常時の通知記録・調査範囲・未解決事項を保存 | [47](47-workspace-watch-observations.md) |
+| `git log --oneline -- improvements/48-watch-before-directory-scan.md`で確認 | ディレクトリ列挙後・監視開始前に作られたファイルが一覧から欠ける競合を修正 | [48](48-watch-before-directory-scan.md) |
 
 各コミットの直後に差分の自己レビューを実施しました。機能ごとに取り消す場合は、作業ツリーの変更を確認したうえで`git revert <commit>`を使えます。全体を戻す場合は表の下から上の順にrevertしてください。
 
@@ -77,6 +78,8 @@
 - 実行済み検証のログとスクリーンショットは`.local/polish-20260914/`にあります。
 
 ## 検証の結論と残る範囲
+
+[48](48-watch-before-directory-scan.md)で、初回列挙後・監視開始前に作成したファイルが公開一覧から欠ける競合を順序固定テストで再現し、監視と終了管理への登録を列挙前に変更しました。ゲームや成果物の形式には依存しません。最終版のbuild・typecheck・lint、単体74・backend170・CLI8・保存4件が成功しました。通常E2Eは比較両モードを含む33件PASS・保存失敗後の復元操作で1件FAILです。後片付けのENOENTで元のエラーが隠れており、traceを保存して継続調査します。全体検証完了とは扱いません。過去の自然発生した候補欠落がすべて今回の競合だったという証拠はなく、native異常終了も未解決です。
 
 [47](47-workspace-watch-observations.md)では、Electronの監視通知を追加記録しました。診断下で比較10回・全画面34件・100バッチ1,500ファイルの一覧反映が成功し、1,500パスのadd通知も照合しました。ただし欠落は再現せず、原因は未確定です。通常実行の失敗とnative異常終了は未解決のままです。アプリ本体は変更せず、一時的な計測用buildの復元もhashで確認しています。
 
