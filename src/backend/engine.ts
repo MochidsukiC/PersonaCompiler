@@ -19,7 +19,7 @@ import path from 'node:path'
 import { z } from 'zod'
 import { inputSchema, stateSchema, type AppEvent, type PreparationInput, type RunState, type WorkspaceSnapshot } from '../shared/contracts'
 import { Workspace, digest, messageOf } from '../main/workspace'
-import { agentModelSettingsSchema, backendCommandSchema, emptyPreparation, preparationArtifactSchema, preparationProgressSchema, type AgentModelSettings, type BackendCommand, type BackendSnapshot, type SessionBinding, type SpecificationDraft } from '../core/contracts'
+import { FAMILY_RELATION_GUIDANCE, agentModelSettingsSchema, backendCommandSchema, emptyPreparation, preparationArtifactSchema, preparationProgressSchema, type AgentModelSettings, type BackendCommand, type BackendSnapshot, type SessionBinding, type SpecificationDraft } from '../core/contracts'
 import { autoModels, defaultSettings, requireModel, resolveEffort, validateSettings } from '../core/models'
 import { allocateCounts, inspectPopulation, validateAnswers, validateMap, validatePopulation } from '../core/population'
 import { BootstrapPrompts, type PromptProvider } from '../core/prompts'
@@ -736,7 +736,7 @@ NPCのモデルAutoとeffort Autoは独立しています。effortはsettings.np
     p.busy = true; p.paused = false; this.stopRequested = false
     p.operation = { id: newId(), kind, output: 'preparation/work/result.json', turnId: null }
     await this.persist()
-    const id = await this.runtime.startTurn(this.parent(), `${text}\n\n${modelSettings}`, images)
+    const id = await this.runtime.startTurn(this.parent(), `${text}${kind === 'population' ? '\n' + FAMILY_RELATION_GUIDANCE : ''}\n\n${modelSettings}`, images)
     p.operation.turnId = id
     await this.persist()
   }

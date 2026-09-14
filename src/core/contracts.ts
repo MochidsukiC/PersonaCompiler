@@ -75,11 +75,13 @@ export const preparationArtifactSchema = z.discriminatedUnion('kind', [
   z.object({ kind: z.literal('draft'), draft: specificationDraftSchema }).strict()
 ])
 
+export const FAMILY_RELATION_GUIDANCE = 'family.relationは、このfamilyを持つ本人から見た相手(npcId)の続柄です。parent=相手が本人の親、child=相手が本人の子、sibling=相手が本人の兄弟姉妹、spouse=相手が本人の配偶者。本人の立場を書かないでください。例: Aが43歳の親、Bが12歳の子なら、A.familyは[{"npcId":"B","relation":"child"}]、B.familyは[{"npcId":"A","relation":"parent"}]です。parentの相手は本人より年上、childの相手は本人より年下で、逆向きの相互参照を持たせます。'
+
 export const npcInitializationSchema = z.object({
   id: identifierSchema, name: z.string().min(1), age: z.number().int().nonnegative(), sex: z.string().min(1),
   temperament: z.string().min(1), physicalAttributes: z.string(), occupation: z.string().nullable(),
   householdId: identifierSchema, locationId: identifierSchema,
-  family: z.array(z.object({ npcId: identifierSchema, relation: z.enum(['parent', 'child', 'sibling', 'spouse']) })),
+  family: z.array(z.object({ npcId: identifierSchema, relation: z.enum(['parent', 'child', 'sibling', 'spouse']).describe(FAMILY_RELATION_GUIDANCE) })),
   birthModelId: z.string().min(1), modelSelectionReason: z.string().min(1)
 }).strict()
 export const populationSchema = z.object({ npcs: z.array(npcInitializationSchema).min(1) }).strict()

@@ -336,6 +336,7 @@ describe('Preparation harness', () => {
     await engine.backendCommand({ type: 'resolveDesign', reviewId, action: 'correct', message: '年齢配分だけを訂正してください' })
     expect(runtime.inputs.at(-1)).toContain('年齢配分だけを訂正してください')
     expect(runtime.inputs.at(-1)).toContain('population.ageDistribution')
+    expect(runtime.inputs.at(-1)).toContain('family.relationは、このfamilyを持つ本人から見た相手(npcId)の続柄です')
     expect(engine.backendStatus().preparation.population).toBeNull()
     expect(engine.backendStatus().preparation.designReview?.decision).toBe('correctionRequested')
     await complete(engine, runtime, population)

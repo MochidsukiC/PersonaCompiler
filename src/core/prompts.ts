@@ -1,5 +1,5 @@
 import { z } from 'zod'
-import { populationSchema, preparationArtifactSchema, type NpcInitialization, type Specification } from './contracts'
+import { FAMILY_RELATION_GUIDANCE, populationSchema, preparationArtifactSchema, type NpcInitialization, type Specification } from './contracts'
 import parentSystemDocument from './prompts/parent-system.md?raw'
 
 const systemBlocks = [...parentSystemDocument.matchAll(/^```text\r?\n([\s\S]*?)^```\s*$/gm)]
@@ -34,6 +34,7 @@ NPCと施設のSessionを生成できるのはHarnessだけです。ユーザー
 同居家族は同じhouseholdIdとし、単身者にもhouseholdIdを割り当てます。別居する親族は別世帯にできます。全NPCのlocationIdには施設一覧にあるlocationIdを指定してください。
 この段階の終了条件はturn_limitのみです。家の範囲・内部の意味付き座標は、承認後に施設モデルが初期化します。
 人口生成は承認済み人数・配分・施設とモデル候補に厳密に従います。親子・兄弟・配偶者の家族関係は相互参照を持たせます。
+${FAMILY_RELATION_GUIDANCE}
 友人・恋人・ライバル等の非家族関係や、未経験の人生・思い出を生成してはいけません。
 Harnessが通知するsettings.npc.model.modeがautoの場合は各NPCに候補からbirthModelIdを割り当てます。fixedの場合は全NPCに通知されたmodelIdを設定します。両モードともmodelSelectionReasonを必ず記載します。設定はHarnessの通知を使い、ユーザーへ再確認しません。
 端末からの追加対話でも、仕様が変更されたら同じresult.jsonに最新の質問または仕様案を書いてください。

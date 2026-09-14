@@ -42,7 +42,7 @@ export function inspectPopulation(input: unknown, spec: Specification, map: MapD
     for (const relation of npc.family) {
       const other = npcs.find(n => n.id === relation.npcId)
       if (!other || other.id === npc.id || !other.family.some(f => f.npcId === npc.id && f.relation === inverse[relation.relation])) throw new Error(`家族関係の参照または相互関係が不正です: ${npc.id} → ${relation.npcId}`)
-      if ((relation.relation === 'parent' && other.age <= npc.age) || (relation.relation === 'child' && other.age >= npc.age)) throw new Error(`親子の年齢が逆転しています: ${npc.id}`)
+      if ((relation.relation === 'parent' && other.age <= npc.age) || (relation.relation === 'child' && other.age >= npc.age)) throw new Error(`親子の年齢が逆転しています: ${npc.id}(${npc.age}歳) → ${other.id}(${other.age}歳), relation=${relation.relation}。family.relationは本人から見た相手の続柄です。${relation.relation === 'parent' ? 'parentは相手が本人より年上の親' : 'childは相手が本人より年下の子'}を表します。年齢とparent/childの向きを確認してください`)
     }
   }
   const issues: DesignIssue[] = []

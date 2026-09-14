@@ -3,6 +3,7 @@ import { readFile } from 'node:fs/promises'
 import { BootstrapPrompts } from '../../src/core/prompts'
 import { population, draft } from './fixtures'
 import { lifeTools } from '../../src/core/life-contracts'
+import { FAMILY_RELATION_GUIDANCE } from '../../src/core/contracts'
 
 describe('Parent prompt integration', () => {
   it('explains organization and construction tools only to compatible conversations', () => {
@@ -32,9 +33,11 @@ describe('Parent prompt integration', () => {
     expect(prompt).toContain('最初の質問ラウンドを省略しません')
     expect(prompt).toContain('仕様revisionを承認したとHarnessが伝えるまで人口生成は禁止')
     expect(prompt).toContain('初期化完了後もturn=0で待機')
+    expect(prompt).toContain(FAMILY_RELATION_GUIDANCE)
     const [preparation, population] = prompt.split('準備成果物JSON Schema:\n')[1].split('人口成果物JSON Schema（Harnessが人口生成を指示した場合のみ）:\n')
     expect(JSON.parse(preparation).oneOf.map((schema: { properties: { kind: { const: string } } }) => schema.properties.kind.const)).toEqual(['questions', 'draft'])
     expect(JSON.parse(population).required).toContain('npcs')
+    expect(JSON.parse(population).properties.npcs.items.properties.family.items.properties.relation.description).toBe(FAMILY_RELATION_GUIDANCE)
   })
   it('does not expose the world manager prompt to NPC and facility sessions', () => {
     const prompts = new BootstrapPrompts()

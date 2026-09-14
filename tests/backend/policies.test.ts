@@ -32,4 +32,16 @@ describe('Model policies and population invariants', () => {
     change.npcs[0].birthModelId = models[0].model
     expect(() => validatePopulation(change, draft.specification, draft.map, settings, [models[1]])).toThrow('利用できません')
   })
+  it.each([false, true])('interprets family relations as the referenced relative and diagnoses reversed parentage (parent first=%s)', parentFirst => {
+    const input = structuredClone(population)
+    input.npcs[0].family = [{ npcId: 'npc3', relation: 'parent' }]
+    input.npcs[3].family = [{ npcId: 'npc0', relation: 'child' }]
+    if (parentFirst) input.npcs.reverse()
+    expect(validatePopulation(input, draft.specification, draft.map, settings, models)).toEqual(input)
+    for (const npc of input.npcs) for (const relative of npc.family) relative.relation = relative.relation === 'parent' ? 'child' : 'parent'
+    const before = structuredClone(input)
+    expect(() => validatePopulation(input, draft.specification, draft.map, settings, models)).toThrow(parentFirst ? 'npc3(40歳) → npc0(5歳), relation=parent' : 'npc0(5歳) → npc3(40歳), relation=child')
+    expect(() => validatePopulation(input, draft.specification, draft.map, settings, models)).toThrow('本人から見た相手の続柄')
+    expect(input).toEqual(before)
+  })
 })
