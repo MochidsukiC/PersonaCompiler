@@ -34,7 +34,8 @@
 | `90ae325` | DEV検証が保存前のチェックポイントを取得して失敗する競合を修正 | [28](28-dev-checkpoint-test-wait.md) |
 | `96cf331` | App Server起動確認のHTTP応答本文を解放し、キャンセル失敗を明示 | [29](29-readiness-response-cleanup.md) |
 | `0d329d5` | 端末切断で返答不明になったCLI要求について、終了時の30秒待ちを即時エラーへ変更 | [30](30-relay-disconnected-ack.md) |
-| `git log --oneline -- improvements/31-review-evidence-navigation.md`で確認 | 制作レビューで同じ根拠を再選択したときも、資料の位置へ移動するよう修正 | [31](31-review-evidence-navigation.md) |
+| `cf6db43` | 制作レビューで同じ根拠を再選択したときも、資料の位置へ移動するよう修正 | [31](31-review-evidence-navigation.md) |
+| `git log --oneline -- improvements/32-review-search-report.md`で確認 | 検索した設定と全根拠を、検索条件・元資料のhash付きでMarkdownとJSONへコピー | [32](32-review-search-report.md) |
 
 各コミットの直後に差分の自己レビューを実施しました。機能ごとに取り消す場合は、作業ツリーの変更を確認したうえで`git revert <commit>`を使えます。全体を戻す場合は表の下から上の順にrevertしてください。
 
@@ -51,6 +52,7 @@
 - 「照合レポートをコピー」で、照合したmanifestと各ファイルのhash・結果・時刻を制作担当者や実装用agentへ渡せます。貼り付けたMarkdownの末尾にJSONも含まれます。
 - 今回の変更後に生成したCompilationには「制作レビュー」が付きます。既存出力は自動で再生成していません。
 - 制作レビューの検索対象を「根拠資料」にすると、出来事や資料の語句・IDから、その資料を参照する設定を探せます。「検索一致」の根拠ボタンで全文を確認できます。
+- 「設定の検索レポートをコピー」で、表示中の設定と全根拠を検索条件・元資料のhash付きで持ち出せます。0件の条件も記録でき、空の検索条件では全設定を収録します。
 - 同じNPCの制作レビューが2つあれば、「別の出力と比較」で再生成による変更を確認できます。比較そのものにモデル推論は不要です。
 - 「比較レポートをコピー」で変更内容・両側の根拠・参照情報を制作記録へ持ち出せます。
 - ファイルの読み込みエラーが出た場合、原因を解消してから同じファイルの再選択か「プレビューを再読み込み」で再試行できます。
@@ -59,7 +61,7 @@
 
 ## 検証の結論と残る範囲
 
-最新の根拠再選択の画面修正でbuild・typecheck・lint成功、単体55・backend145・Electron E2E25の計225件PASS。終了コード・対象範囲とログは[31](31-review-evidence-navigation.md)に記載しています。今回は変更していないCLI接続・保存処理については、直前の[30](30-relay-disconnected-ack.md)でCLI/TUI接続8・保存4件も成功しています。途中で見つかったDEV検証の保存完了待ちの競合も[28](28-dev-checkpoint-test-wait.md)で修正済みです。[25](25-offline-review-demo.md)では専用デモの比較・照合・実クリップボード、通常表示と終了も検証しました。
+最新の設定検索レポート機能でbuild・typecheck・lint成功、単体61・backend145・Electron E2E27の計233件PASS。終了コード・対象範囲とログは[32](32-review-search-report.md)に記載しています。今回は変更していないCLI接続・保存処理については、[30](30-relay-disconnected-ack.md)でCLI/TUI接続8・保存4件も成功しています。途中で見つかったDEV検証の保存完了待ちの競合も[28](28-dev-checkpoint-test-wait.md)で修正済みです。[25](25-offline-review-demo.md)では専用デモの比較・照合・実クリップボード、通常表示と終了も検証しました。
 
 別件として[17](17-workspace-dot-prefix.md)のCLI検証では`life-tools.test.ts`のworkerが終了コード`3221226505`で異常終了しました。該当テスト単独と正式CLI検証の再実行は成功していますが、native異常終了は未解決です。今回のRPC形式検証によって解消したとは扱いません。
 
