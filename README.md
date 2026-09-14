@@ -22,6 +22,8 @@ npm start
 
 制作レビューをモデル推論なしで試すには、`npm run demo:review`を実行します。合成の比較資料を作成し、比較画面まで自動で開きます。「両側の根拠を見る」「比較レポートをコピー」を試した後、ファイル一覧の`compilation/current/npcs/sample/manifest.json`で5ファイルの照合とレポートコピーを確認できます。ウィンドウを閉じると終了します。
 
+manifestの画面で「別のパッケージとファイルを比較」を開き、基準に`Compilation baseline`を選ぶと、全登録ファイルの差分も確認できます。ファイルの形式によらずhashで比較し、追加・削除・内容変更と欠損を分けて表示します。結果と両側の照合記録をMarkdownとJSONでコピーできます。
+
 このデモはゲームへの組み込み前に資料を確認する操作例で、実際のAI生成結果や生活シミュレーションの品質を示すものではありません。認証・Codex CLI・実モデルは使用しません。実行ごとに`.local/review-demo-*`へワールドとElectronのprofileを分けて作り、既存ワールドを読み込まず、再実行でも前の資料を上書きしません。保存先はコンソールに表示します。自動検証は`npm run test:review-demo`です（実クリップボードを書き換え、比較・照合レポートと画面画像を同じデモ用ディレクトリへ保存します）。
 
 `codex.exe` をPATHに置くか、`PERSONA_CODEX_BIN`へ実行ファイルの絶対パスを指定してください。アプリは接続ボタンから専用App Serverを起動し、backendと実CLIの両方が同じConversationへ接続します。App ServerのWebSocketはlocalhost限定で、起動ごとに生成するcapability tokenで認証します。

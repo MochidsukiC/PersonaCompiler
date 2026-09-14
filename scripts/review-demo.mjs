@@ -90,10 +90,18 @@ try {
     const inspectionReport = await copyAndRead(inspection, '照合レポートをコピー', '照合結果とファイルの参照情報をコピーしました。', 'persona-package-inspection/v1')
     expect(inspectionReport.files).toHaveLength(5)
     expect(inspectionReport.files.every(file => file.status === 'match')).toBe(true)
+    await inspection.locator('summary').filter({ hasText: '別のパッケージとファイルを比較' }).click()
+    const packageComparison = page.getByRole('region', { name: 'パッケージのファイル比較' })
+    await packageComparison.getByRole('combobox', { name: 'ファイル比較の基準' }).selectOption('compilation/baseline/npcs/sample/manifest.json')
+    await expect(packageComparison.getByRole('status')).toHaveText('追加 0件 · 削除 0件 · 内容変更 4件 · 内容一致 1件 · 比較不能（欠損） 0件')
+    const packageReport = await copyAndRead(packageComparison, 'ファイル比較レポートをコピー', 'ファイル比較と両側の照合記録をコピーしました。', 'persona-package-comparison/v1')
+    expect(packageReport.comparison.files).toHaveLength(5)
+    expect(packageReport.before.files.every(file => file.status === 'match')).toBe(true)
+    expect(packageReport.after.files.every(file => file.status === 'match')).toBe(true)
     await openComparison()
     await page.screenshot({ path: path.join(base, 'review-demo.png') })
     expect(errors).toEqual([])
-    console.info('PASS: review comparison, actual clipboard JSON, five-file integrity, renderer errors 0')
+    console.info('PASS: review comparison, package file comparison, actual clipboard JSON, five-file integrity, renderer errors 0')
   } else {
     await whenClosed
   }

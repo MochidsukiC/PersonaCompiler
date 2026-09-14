@@ -1,4 +1,4 @@
-.package-inspection { padding: 22px 24px; line-height: 1.7; color: #cbdac4; overflow-wrap: anywhere; }
+.package-inspection { flex: 1; min-height: 0; overflow: auto; padding: 22px 24px; line-height: 1.7; color: #cbdac4; overflow-wrap: anywhere; }
 .package-inspection h1 { font-size: 22px; margin: 8px 0; }
 .package-inspection header p, .package-inspection-note { color: #a8b89e; }
 .package-inspection ul { padding: 0; list-style: none; }
@@ -8,3 +8,7 @@
 .package-inspection code { font-size: 11px; }
 .package-inspection pre { white-space: pre-wrap; font-size: 11px; }
 .package-inspection details { margin-top: 12px; }
+.package-comparison { border-block: 1px solid #3e5238; padding: 12px 0; }
+.package-comparison label { display: flex; flex-direction: column; gap: 5px; margin: 12px 0; }
+.package-comparison select { width: 100%; padding: 7px; background: #142219; color: #cbdac4; border: 1px solid #3e5238; }
+.package-inspection .package-diff-removed, .package-inspection .package-diff-changed, .package-inspection .package-diff-unavailable { border-left-color: #e5af75; }
