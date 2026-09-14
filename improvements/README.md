@@ -1,6 +1,6 @@
 # 磨き上げレビュー — 2026-09-14
 
-作業ブランチ: `codex/hackathon-polish`。着手点: `051ef09`。push・外部公開は行っていません。
+作業ブランチ: `codex/hackathon-polish`。着手点: `051ef09`。ユーザーの指示により51の`47b3c25`までpush済みです。52はローカルコミットです。
 
 | commit | 内容 | 試し方・検証・戻し方 |
 |---|---|---|
@@ -55,6 +55,7 @@
 | `e25ede3` | 保存テストで元のエラーを保持し、復元途中の失敗でも後片付けとアプリ終了を試行 | [49](49-persistence-test-cleanup.md) |
 | `e4ea30e` | ファイルを挟んだディレクトリ復元後の一覧欠落を、独立診断で再現・記録（50時点では未修正） | [50](50-directory-replacement-diagnostic.md) |
 | `git log --oneline -- improvements/51-directory-replacement-watch.md`で確認 | ディレクトリ復元後の監視・一覧欠落を修正。種類変更、通知順序、走査終了・監視解除を検証 | [51](51-directory-replacement-watch.md) |
+| `git log --oneline -- improvements/52-design-deviation-choice.md`で確認 | 人口総数・年齢分布・性別比率の差異に「気にせず続行」「訂正を指示」を追加 | [52](52-design-deviation-choice.md) |
 
 各コミットの直後に差分の自己レビューを実施しました。機能ごとに取り消す場合は、作業ツリーの変更を確認したうえで`git revert <commit>`を使えます。全体を戻す場合は表の下から上の順にrevertしてください。
 

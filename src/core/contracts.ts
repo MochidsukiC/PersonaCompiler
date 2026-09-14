@@ -93,6 +93,13 @@ export const sessionBindingSchema = z.object({
   creation: z.enum(['requested', 'created', 'initialized']), seedPersisted: z.boolean(), lifeToolsVersion: z.literal(1).optional(), persistenceVersion: z.literal(2).optional(), memoryVersion: z.literal(1).optional()
 })
 export type SessionBinding = z.infer<typeof sessionBindingSchema>
+export const designIssueSchema = z.object({ code: z.string(), message: z.string(), details: z.array(z.object({ label: z.string(), expected: z.number(), actual: z.number() })) })
+export type DesignIssue = z.infer<typeof designIssueSchema>
+export const populationReviewSchema = z.object({
+  id: identifierSchema, sourceHash: z.string(), specificationHash: z.string(), population: populationSchema,
+  issues: z.array(designIssueSchema), decision: z.enum(['pending', 'accepted', 'correctionRequested']),
+  decidedAt: z.string().nullable(), instruction: z.string()
+})
 export const preparationProgressSchema = z.object({
   phase: z.enum(['idle', 'interview', 'review', 'locked', 'generating', 'ready']), revision: z.number().int().nonnegative(),
   busy: z.boolean(), paused: z.boolean(), error: z.string().nullable(),
@@ -100,6 +107,7 @@ export const preparationProgressSchema = z.object({
   draft: specificationDraftSchema.extend({ revision: z.number().int().positive() }).nullable(),
   lock: z.object({ revision: z.number().int(), hash: z.string(), approvedAt: z.string() }).nullable(),
   population: populationSchema.nullable(), sessions: z.array(sessionBindingSchema),
+  designReview: populationReviewSchema.optional(),
   operation: z.object({ id: identifierSchema, kind: z.enum(['preparation', 'population']), output: z.string(), turnId: z.string().nullable() }).nullable()
 })
 export type PreparationProgress = z.infer<typeof preparationProgressSchema>
@@ -128,6 +136,7 @@ export const backendCommandSchema = z.discriminatedUnion('type', [
   z.object({ type: z.literal('revise'), revision: z.number().int(), message: z.string().min(1).max(50000) }),
   z.object({ type: z.literal('approve'), revision: z.number().int() }),
   z.object({ type: z.literal('retry') }),
+  z.object({ type: z.literal('resolveDesign'), reviewId: identifierSchema, action: z.enum(['continue', 'correct']), message: z.string().trim().max(50000).default('') }),
   z.object({ type: z.literal('recompile') }),
   z.object({ type: z.literal('startSimulation'), step: z.boolean() }),
   z.object({ type: z.literal('terminalReconnect'), sessionId: z.string().min(1).max(160) })

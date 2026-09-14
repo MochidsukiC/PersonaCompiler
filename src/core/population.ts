@@ -1,5 +1,5 @@
 import type { MapDocument } from '../shared/contracts'
-import { populationSchema, type AgentModelSettings, type ModelInfo, type Population, type QuestionAnswers, type QuestionRound, type Specification } from './contracts'
+import { populationSchema, type AgentModelSettings, type DesignIssue, type ModelInfo, type Population, type QuestionAnswers, type QuestionRound, type Specification } from './contracts'
 import { autoModels, requireModel, resolveEffort } from './models'
 
 export function allocateCounts(total: number, ratios: number[]): number[] {
@@ -27,15 +27,11 @@ export function validateMap(spec: Specification, map: MapDocument): void {
   for (const connection of map.connections) if (!locations.has(connection.from) || !locations.has(connection.to)) throw new Error(`道の接続先が不明です: ${connection.id}`)
   for (const facility of spec.town.facilities) if (!locations.has(facility.locationId)) throw new Error(`施設の所在地が不明です: ${facility.id}`)
 }
-export function validatePopulation(input: unknown, spec: Specification, map: MapDocument, settings: AgentModelSettings, models: ModelInfo[]): Population {
+export function inspectPopulation(input: unknown, spec: Specification, map: MapDocument, settings: AgentModelSettings, models: ModelInfo[]): { population: Population; issues: DesignIssue[] } {
   const population = populationSchema.parse(input)
   const { npcs } = population
-  if (npcs.length !== spec.population.count || new Set(npcs.map(n => n.id)).size !== npcs.length) throw new Error('人口の総人数が不一致、またはNPC IDが重複しています')
+  if (new Set(npcs.map(n => n.id)).size !== npcs.length) throw new Error('NPC IDが重複しています')
   const locations = new Set(map.locations.map(l => l.id))
-  const ageCounts = allocateCounts(npcs.length, spec.population.ageDistribution.map(a => a.ratio))
-  const sexCounts = allocateCounts(npcs.length, spec.population.sexRatio.map(a => a.ratio))
-  if (spec.population.ageDistribution.some((band, i) => npcs.filter(n => n.age >= band.min && n.age <= band.max).length !== ageCounts[i])) throw new Error('年齢分布が承認済みの人口配分と一致しません')
-  if (spec.population.sexRatio.some((row, i) => npcs.filter(n => n.sex === row.sex).length !== sexCounts[i])) throw new Error('性別比率が承認済みの人口配分と一致しません')
   const allowed = settings.npc.model.mode === 'auto' ? autoModels(models).map(m => m.model) : [settings.npc.model.modelId]
   const inverse = { parent: 'child', child: 'parent', sibling: 'sibling', spouse: 'spouse' } as const
   for (const npc of npcs) {
@@ -49,5 +45,22 @@ export function validatePopulation(input: unknown, spec: Specification, map: Map
       if ((relation.relation === 'parent' && other.age <= npc.age) || (relation.relation === 'child' && other.age >= npc.age)) throw new Error(`親子の年齢が逆転しています: ${npc.id}`)
     }
   }
-  return population
+  const issues: DesignIssue[] = []
+  if (npcs.length !== spec.population.count) issues.push({ code: 'population.count', message: '人口総数が承認済みの人数と一致しません', details: [{ label: '人口総数', expected: spec.population.count, actual: npcs.length }] })
+  const ageCounts = allocateCounts(spec.population.count, spec.population.ageDistribution.map(a => a.ratio))
+  const ages = spec.population.ageDistribution.map((band, i) => ({ label: `${band.min}〜${band.max}歳`, expected: ageCounts[i], actual: npcs.filter(n => n.age >= band.min && n.age <= band.max).length }))
+  const outsideAges = npcs.filter(n => !spec.population.ageDistribution.some(band => n.age >= band.min && n.age <= band.max)).length
+  if (outsideAges) ages.push({ label: '承認された年齢帯の外', expected: 0, actual: outsideAges })
+  if (ages.some(row => row.actual !== row.expected)) issues.push({ code: 'population.ageDistribution', message: '年齢分布が承認済みの人口配分と一致しません', details: ages })
+  const sexCounts = allocateCounts(spec.population.count, spec.population.sexRatio.map(a => a.ratio))
+  const sexes = spec.population.sexRatio.map((row, i) => ({ label: row.sex, expected: sexCounts[i], actual: npcs.filter(n => n.sex === row.sex).length }))
+  for (const sex of new Set(npcs.map(n => n.sex))) if (!spec.population.sexRatio.some(row => row.sex === sex)) sexes.push({ label: sex, expected: 0, actual: npcs.filter(n => n.sex === sex).length })
+  if (sexes.some(row => row.actual !== row.expected)) issues.push({ code: 'population.sexRatio', message: '性別比率が承認済みの人口配分と一致しません', details: sexes })
+  return { population, issues }
+}
+
+export function validatePopulation(input: unknown, spec: Specification, map: MapDocument, settings: AgentModelSettings, models: ModelInfo[], accepted?: { population: Population; specificationHash: string; decision: string }, specificationHash?: string): Population {
+  const result = inspectPopulation(input, spec, map, settings, models)
+  if (result.issues.length && !(accepted?.decision === 'accepted' && accepted.specificationHash === specificationHash && JSON.stringify(accepted.population) === JSON.stringify(result.population))) throw new Error(result.issues.map(issue => issue.message).join('\n'))
+  return result.population
 }

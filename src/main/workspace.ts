@@ -200,6 +200,12 @@ export class Workspace {
     if (!this.closed) this.publish(this.view)
   }
 
+  clearError(expected: string): void {
+    if (this.view.error !== expected) return
+    this.view = { ...this.view, error: null, version: this.view.version + 1 }
+    if (!this.closed) this.publish(this.view)
+  }
+
   async close(): Promise<void> {
     this.closed = true
     if (this.refreshTimer) clearTimeout(this.refreshTimer)

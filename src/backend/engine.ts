@@ -19,7 +19,7 @@ import { inputSchema, stateSchema, type AppEvent, type PreparationInput, type Ru
 import { Workspace, digest, messageOf } from '../main/workspace'
 import { agentModelSettingsSchema, backendCommandSchema, emptyPreparation, preparationArtifactSchema, preparationProgressSchema, type AgentModelSettings, type BackendCommand, type BackendSnapshot, type SessionBinding, type SpecificationDraft } from '../core/contracts'
 import { autoModels, defaultSettings, requireModel, resolveEffort, validateSettings } from '../core/models'
-import { allocateCounts, validateAnswers, validateMap, validatePopulation } from '../core/population'
+import { allocateCounts, inspectPopulation, validateAnswers, validateMap, validatePopulation } from '../core/population'
 import { BootstrapPrompts, type PromptProvider } from '../core/prompts'
 import type { AgentRuntime } from './runtime'
 import type { TerminalBridge } from './terminals'
@@ -276,6 +276,7 @@ export class BackendEngine {
           this.stopRequested = false; if (this.dev) this.dev.hold = false; delete this.view.compilation; await this.persist(); this.scheduleCompilation(); break
         }
         case 'retry': await this.retry(); break
+        case 'resolveDesign': await this.resolveDesign(command); break
         case 'startSimulation': {
           this.ensureConnected()
           this.stopRequested = false
@@ -702,6 +703,48 @@ NPCのモデルAutoとeffort Autoは独立しています。effortはsettings.np
     await this.startParent('population', `Harnessより: 仕様revision ${draft.revision}がユーザーに承認されました。初期人口だけをresult.jsonへ保存してください。Session生成はHarnessが行います。\n承認仕様: ${JSON.stringify(draft.specification)}\n地図: ${JSON.stringify(draft.map)}\n年齢帯ごとの確定人数: ${JSON.stringify(allocateCounts(population.count, population.ageDistribution.map(a => a.ratio)))}\n性別区分ごとの確定人数: ${JSON.stringify(allocateCounts(population.count, population.sexRatio.map(s => s.ratio)))}\nモデル設定は末尾のHarness確定設定に従ってください。非家族関係・人生経験の生成は禁止です。`)
   }
 
+  private async reviewPopulation(text: string, requireChoice = false): Promise<boolean> {
+    const p = this.view.preparation
+    const draft = await this.lockedDraft()
+    const result = inspectPopulation(JSON.parse(text), draft.specification, draft.map, this.settings(), this.view.models)
+    if (!result.issues.length && !requireChoice) return false
+    const previousError = p.error
+    p.designReview = { id: newId(), sourceHash: digest(text), specificationHash: p.lock!.hash, population: result.population, issues: result.issues, decision: 'pending', decidedAt: null, instruction: '' }
+    p.busy = false; p.paused = true; p.error = null; this.view.error = null
+    if (previousError) this.workspace.clearError(previousError)
+    await this.persist()
+    return true
+  }
+
+  private async resolveDesign(command: Extract<BackendCommand, { type: 'resolveDesign' }>): Promise<void> {
+    this.ensureConnected(); this.ensureIdle()
+    const p = this.view.preparation
+    const review = p.designReview
+    if (!review || review.id !== command.reviewId || review.decision !== 'pending' || p.operation || p.population || p.phase !== 'generating') throw new Error('この設計差異は既に処理されたか、対象が変わっています')
+    const draft = await this.lockedDraft()
+    if (p.lock!.hash !== review.specificationHash) throw new Error('設計差異の対象仕様が変わっています')
+    const text = await this.workspace.read('preparation/work/result.json')
+    if (digest(text) !== review.sourceHash) {
+      await this.reviewPopulation(text, true)
+      return
+    }
+    const checked = inspectPopulation(JSON.parse(text), draft.specification, draft.map, this.settings(), this.view.models)
+    if (JSON.stringify(checked.population) !== JSON.stringify(review.population) || JSON.stringify(checked.issues) !== JSON.stringify(review.issues)) throw new Error('設計差異の検証結果が変わっています')
+    const previousError = p.error
+    p.error = null; this.view.error = null
+    if (previousError) this.workspace.clearError(previousError)
+    review.decision = command.action === 'continue' ? 'accepted' : 'correctionRequested'
+    review.decidedAt = new Date().toISOString(); review.instruction = command.message
+    await this.persist()
+    if (command.action === 'correct') {
+      await this.startParent('population', `Harnessより: ユーザーが生成結果の訂正を指示しました。承認済み仕様は変更せず、次の設計差異を訂正した初期人口全体をresult.jsonへ保存してください。\n設計差異: ${JSON.stringify(review.issues)}\nユーザーの追記: ${command.message || 'なし'}\n現在の初期人口: ${JSON.stringify(review.population)}\n承認仕様: ${JSON.stringify(draft.specification)}\n地図: ${JSON.stringify(draft.map)}`)
+      return
+    }
+    p.population = checked.population; this.artifactHash = digest(text)
+    await this.workspace.write('population.json', JSON.stringify(p.population, null, 2))
+    await this.persist(); await this.initializePopulation()
+  }
+
   private async createBinding(binding: SessionBinding, instructions: string, seed: string): Promise<void> {
     if (this.lifecycleVersion) binding.lifecycleVersion = 1
     if (this.persistence) binding.persistenceVersion = 2
@@ -760,7 +803,7 @@ NPCのモデルAutoとeffort Autoは独立しています。effortはsettings.np
     validateSettings(this.settings(), this.view.models)
     const p = this.view.preparation
     if (p.lock) await this.lockedDraft()
-    if (p.population && p.draft) validatePopulation(p.population, p.draft.specification, p.draft.map, this.settings(), this.view.models)
+    if (p.population && p.draft) validatePopulation(p.population, p.draft.specification, p.draft.map, this.settings(), this.view.models, p.designReview, p.lock?.hash)
     for (const binding of this.view.preparation.sessions) {
       if (!binding.threadId) throw new Error(`Session生成結果が未確定です。重複生成を避けるため自動再送しません: ${binding.agentId}`)
       if (!binding.seedPersisted) throw new Error(`初期文脈の保存結果が未確定です: ${binding.agentId} / ${binding.threadId}`)
@@ -779,6 +822,7 @@ NPCのモデルAutoとeffort Autoは独立しています。effortはsettings.np
       if (npc && binding.role === 'npc') this.runtime.setThreadPolicy?.(binding, this.life?.snapshot().stage === 'ended')
       binding.creation = 'initialized'
     }
+    if (!p.population && !p.operation && !p.designReview && p.phase === 'generating' && p.error && /年齢分布が承認済み|性別比率が承認済み|人口の総人数が不一致/.test(p.error)) await this.reviewPopulation(await this.workspace.read('preparation/work/result.json'))
     await this.persist()
     await this.publishWorld()
     this.scheduleCompilation()
@@ -859,6 +903,7 @@ NPCのモデルAutoとeffort Autoは独立しています。effortはsettings.np
     this.ensureConnected(); this.ensureIdle()
     const p = this.view.preparation
     await this.restoreSessions()
+    if (p.designReview?.decision === 'pending') return
     if (this.life) { this.devContinuous = !!this.dev; await this.life.resume(!!this.dev); return }
     if (this.dev?.pendingTurn) {
       const pending = this.dev.pendingTurn
@@ -950,6 +995,8 @@ NPCのモデルAutoとeffort Autoは独立しています。effortはsettings.np
     const input: unknown = JSON.parse(text)
     if (operation.kind === 'population') {
       const draft = await this.lockedDraft()
+      if (await this.reviewPopulation(text)) return
+      delete p.designReview
       p.population = validatePopulation(input, draft.specification, draft.map, this.settings(), this.view.models)
       this.artifactHash = hash
       await this.workspace.write('population.json', JSON.stringify(p.population, null, 2))

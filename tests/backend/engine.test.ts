@@ -145,6 +145,93 @@ async function review(engine: BackendEngine, runtime: Runtime, configuration = s
 }
 
 describe('Preparation harness', () => {
+  async function pendingDesign(memory = false) {
+    const fixture = await setup(undefined, memory)
+    await review(fixture.engine, fixture.runtime)
+    await fixture.engine.backendCommand({ type: 'approve', revision: 1 })
+    const input = structuredClone(population); input.npcs[0].age = 25
+    await fixture.engine.workspace.write('preparation/work/result.json', JSON.stringify(input))
+    const preparation = fixture.engine.backendStatus().preparation
+    fixture.runtime.listener({ method: 'turn/completed', params: { threadId: preparation.sessions[0].threadId, turn: { id: preparation.operation!.turnId, status: 'completed' } } })
+    await vi.waitFor(() => expect(fixture.engine.backendStatus().preparation.designReview?.decision).toBe('pending'))
+    return { ...fixture, input, reviewId: fixture.engine.backendStatus().preparation.designReview!.id }
+  }
+
+  it.each([false, true])('requires an explicit design choice and preserves acceptance across restoration (memory=%s)', async memory => {
+    const { engine, runtime, root, input, reviewId } = await pendingDesign(memory)
+    expect(engine.backendStatus().preparation.population).toBeNull()
+    expect(engine.backendStatus().preparation.error).toBeNull()
+    expect(engine.snapshot().error).toBeNull()
+    expect(runtime.created).toHaveLength(1)
+    const turns = runtime.inputs.length
+    await engine.backendCommand({ type: 'retry' })
+    expect(runtime.inputs).toHaveLength(turns)
+    await engine.backendCommand({ type: 'resolveDesign', reviewId, action: 'continue', message: '' })
+    await vi.waitFor(() => expect(engine.backendStatus().preparation.phase).toBe('ready'), { timeout: 10000 })
+    expect(engine.backendStatus().preparation.population).toEqual(input)
+    expect(engine.backendStatus().preparation.designReview?.decision).toBe('accepted')
+    expect(runtime.created).toHaveLength(9)
+    await engine.close(); engines.delete(engine)
+    const restored = await setup(root, memory)
+    expect(restored.engine.backendStatus().preparation.designReview?.decision).toBe('accepted')
+    expect(restored.engine.backendStatus().preparation.population).toEqual(input)
+    expect(restored.runtime.created).toEqual([])
+  })
+
+  it('sends the design differences and optional instruction to the parent, then accepts corrected output', async () => {
+    const { engine, runtime, reviewId } = await pendingDesign()
+    await engine.backendCommand({ type: 'resolveDesign', reviewId, action: 'correct', message: '年齢配分だけを訂正してください' })
+    expect(runtime.inputs.at(-1)).toContain('年齢配分だけを訂正してください')
+    expect(runtime.inputs.at(-1)).toContain('population.ageDistribution')
+    expect(engine.backendStatus().preparation.population).toBeNull()
+    expect(engine.backendStatus().preparation.designReview?.decision).toBe('correctionRequested')
+    await complete(engine, runtime, population)
+    expect(engine.backendStatus().preparation.designReview).toBeUndefined()
+    expect(engine.backendStatus().preparation.population).toEqual(population)
+  })
+
+  it('requires a fresh choice if generated output changes before acceptance', async () => {
+    const { engine, runtime, input, reviewId } = await pendingDesign()
+    input.npcs[1].age = 26
+    await engine.workspace.write('preparation/work/result.json', JSON.stringify(input))
+    await engine.backendCommand({ type: 'resolveDesign', reviewId, action: 'continue', message: '' })
+    const current = engine.backendStatus().preparation.designReview!
+    expect(current.id).not.toBe(reviewId)
+    expect(current.decision).toBe('pending')
+    expect(engine.backendStatus().preparation.population).toBeNull()
+    await expect(engine.backendCommand({ type: 'resolveDesign', reviewId, action: 'continue', message: '' })).rejects.toThrow('対象が変わっています')
+    expect(runtime.created).toHaveLength(1)
+    await engine.backendCommand({ type: 'resolveDesign', reviewId: current.id, action: 'continue', message: '' })
+    expect(engine.backendStatus().preparation.error).toBeNull()
+    expect(engine.snapshot().error).toBeNull()
+  })
+
+  it('turns a saved legacy age-distribution failure into a pending choice after reconnecting', async () => {
+    const { engine, root } = await pendingDesign()
+    const metadata = JSON.parse(await engine.workspace.read('backend.json'))
+    delete metadata.preparation.designReview
+    metadata.preparation.error = '[generating / Harness] 年齢分布が承認済みの人口配分と一致しません'
+    await engine.close(); engines.delete(engine)
+    await writeFile(path.join(engine.workspace.root, 'backend.json'), JSON.stringify(metadata))
+    const restored = await setup(root)
+    expect(restored.engine.backendStatus().preparation.designReview?.decision).toBe('pending')
+    expect(restored.engine.backendStatus().preparation.error).toBeNull()
+    expect(restored.runtime.created).toEqual([])
+  })
+
+  it('rechecks corrected files without silently accepting a changed result or getting stuck', async () => {
+    const { engine, runtime, reviewId } = await pendingDesign()
+    await engine.workspace.write('preparation/work/result.json', JSON.stringify(population))
+    await engine.backendCommand({ type: 'resolveDesign', reviewId, action: 'continue', message: '' })
+    const updated = engine.backendStatus().preparation.designReview!
+    expect(updated.id).not.toBe(reviewId)
+    expect(updated.issues).toEqual([])
+    expect(updated.decision).toBe('pending')
+    expect(runtime.created).toHaveLength(1)
+    await engine.backendCommand({ type: 'resolveDesign', reviewId: updated.id, action: 'continue', message: '' })
+    await vi.waitFor(() => expect(engine.backendStatus().preparation.phase).toBe('ready'), { timeout: 10000 })
+  })
+
   it('creates and restores conversations without spawning terminals until opened', async () => {
     const { engine, runtime, root } = await setup()
     const attach = vi.spyOn(engine.sessions, 'attach')

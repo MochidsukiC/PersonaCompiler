@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react'
-import type { AgentModelSettings, BackendCommand, BackendSnapshot, ModelInfo, QuestionRound } from '../../core/contracts'
+import type { AgentModelSettings, BackendCommand, BackendSnapshot, ModelInfo, PreparationProgress, QuestionRound } from '../../core/contracts'
 import { autoModels, resolveEffort, supportedEfforts, validateSettings } from '../../core/models'
 import { allocateCounts } from '../../core/population'
 import { endReasonLabels } from './lifecycle-labels'
@@ -55,10 +55,25 @@ export function BackendPanel({ view, onError }: { view: BackendSnapshot; onError
       {p.phase === 'review' && <><label>地図・仕様への修正依頼<textarea aria-label="仕様の修正依頼" rows={2} value={revisionMessage} maxLength={50000} onChange={e => setRevisionMessage(e.target.value)} /></label><div className="backend-actions"><button className="button" disabled={busy || !revisionMessage.trim() || !view.authenticated} onClick={() => void command({ type: 'revise', revision: draft.revision, message: revisionMessage })}>親へ修正を依頼</button><button className="button primary" disabled={busy || !!p.error || !view.authenticated} onClick={() => void command({ type: 'approve', revision: draft.revision })}>revision {draft.revision}を承認</button></div></>}
       {p.lock && <p className="lock-record">承認済み revision {p.lock.revision} · hash {p.lock.hash.slice(0, 12)}</p>}
     </div>}
+    {p.designReview && <DesignReview key={p.designReview.id} review={p.designReview} disabled={busy || !view.authenticated || view.connection !== 'connected' || !!view.persistence?.readOnlyReason} command={command} />}
     {busy && <p className="backend-section" role="status">{pending ? '処理中…' : '親の応答・初期化を待っています。端末でも確認できます。'}</p>}
     {p.phase === 'ready' && <p className="backend-section">初期NPC {p.population?.npcs.length}人と施設のConversationを用意しました。地図・一覧から実端末を開けます。世界時刻はturn=0で停止しています。</p>}
-    {(p.error || p.paused) && <div className="backend-section"><p role="alert">{p.error ?? '準備を一時停止しています。'}</p><button className="button" disabled={busy || !view.authenticated} onClick={() => void command({ type: 'retry' })}>保存済みの状態から再開</button></div>}
+    {(p.error || p.paused) && p.designReview?.decision !== 'pending' && <div className="backend-section"><p role="alert">{p.error ?? '準備を一時停止しています。'}</p><button className="button" disabled={busy || !view.authenticated} onClick={() => void command({ type: 'retry' })}>保存済みの状態から再開</button></div>}
   </div>
+}
+function DesignReview({ review, disabled, command }: { review: NonNullable<PreparationProgress['designReview']>; disabled: boolean; command: (value: BackendCommand) => Promise<void> }) {
+  const [message, setMessage] = useState('')
+  return <section className="backend-section" aria-label="設計との差異">
+    <h3>承認済みの設計との差異</h3>
+    {!review.issues.length && <p>生成結果が変更され、設計との差異は解消されています。更新後の人口は{review.population.npcs.length}人です。続行する前にもう一度選択してください。</p>}
+    {review.issues.map(issue => <div key={issue.code}><p>{issue.message}</p><table><thead><tr><th>項目</th><th>承認済み</th><th>生成結果</th></tr></thead><tbody>{issue.details.map(row => <tr key={row.label}><th>{row.label}</th><td>{row.expected}人</td><td>{row.actual}人</td></tr>)}</tbody></table></div>)}
+    {review.decision === 'pending' ? <>
+      <p>この差異を許容して現在の生成結果を採用するか、親Agentに訂正を指示できます。</p>
+      <label>訂正指示への追記（任意）<textarea aria-label="訂正指示への追記" rows={2} maxLength={50000} value={message} disabled={disabled} onChange={event => setMessage(event.target.value)} /></label>
+      <div className="backend-actions"><button className="button" disabled={disabled} onClick={() => void command({ type: 'resolveDesign', reviewId: review.id, action: 'continue', message: '' })}>気にせず続行</button><button className="button primary" disabled={disabled} onClick={() => void command({ type: 'resolveDesign', reviewId: review.id, action: 'correct', message })}>訂正を指示</button></div>
+      <p>訂正時は親Agentが再生成します。</p>
+    </> : <p role="status">{review.decision === 'accepted' ? 'この差異を許容して続行しました。' : '親Agentに訂正を指示しました。'}</p>}
+  </section>
 }
 const endLabels = { turn_limit: 'ターン上限', generation_zero_extinction: '初期世代の全員死亡', generation_zero_extinction_with_turn_limit: '初期世代の全員死亡、またはターン上限' }
 function npcModels(settings: AgentModelSettings, models: ModelInfo[]) { const policy = settings.npc.model; return policy.mode === 'auto' ? autoModels(models) : models.filter(m => m.model === policy.modelId) }
