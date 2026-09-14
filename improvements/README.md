@@ -51,7 +51,8 @@
 | `4476b63` | 比較候補の欠落時に、画面・候補・公開ファイル一覧・実ディスクのパスを保存 | [45](45-package-candidate-failure-evidence.md) |
 | `3747c75` | 同じ施設IDを持つ別ワールドへ切り替えたとき、旧ワールドの施設選択・表示設定を初期化 | [46](46-world-view-run-boundary.md) |
 | `bb9f623` | 比較候補欠落の監視経路を追加診断。正常時の通知記録・調査範囲・未解決事項を保存 | [47](47-workspace-watch-observations.md) |
-| `git log --oneline -- improvements/48-watch-before-directory-scan.md`で確認 | ディレクトリ列挙後・監視開始前に作られたファイルが一覧から欠ける競合を修正 | [48](48-watch-before-directory-scan.md) |
+| `f338d1d` | ディレクトリ列挙後・監視開始前に作られたファイルが一覧から欠ける競合を修正 | [48](48-watch-before-directory-scan.md) |
+| `git log --oneline -- improvements/49-persistence-test-cleanup.md`で確認 | 保存テストで元のエラーを保持し、復元途中の失敗でも後片付けとアプリ終了を試行 | [49](49-persistence-test-cleanup.md) |
 
 各コミットの直後に差分の自己レビューを実施しました。機能ごとに取り消す場合は、作業ツリーの変更を確認したうえで`git revert <commit>`を使えます。全体を戻す場合は表の下から上の順にrevertしてください。
 
@@ -78,6 +79,8 @@
 - 実行済み検証のログとスクリーンショットは`.local/polish-20260914/`にあります。
 
 ## 検証の結論と残る範囲
+
+[49](49-persistence-test-cleanup.md)で、保存テストの復元を工程ごとに管理し、元のエラーと後片付けの例外を保持して、復元失敗時も検証用アプリの終了を試みるようにしました。typecheck・lint、通常E2E全34件が成功しました。意図的な障害2件ではエラー保持・復元状態・Electron exit 0を確認しています。アプリ本体は変更していません。48の自然発生した復元失敗は診断10回でも再現せず、原因未確定です。今回の成功で元の失敗やnative異常終了を解消済みとは扱いません。
 
 [48](48-watch-before-directory-scan.md)で、初回列挙後・監視開始前に作成したファイルが公開一覧から欠ける競合を順序固定テストで再現し、監視と終了管理への登録を列挙前に変更しました。ゲームや成果物の形式には依存しません。最終版のbuild・typecheck・lint、単体74・backend170・CLI8・保存4件が成功しました。通常E2Eは比較両モードを含む33件PASS・保存失敗後の復元操作で1件FAILです。後片付けのENOENTで元のエラーが隠れており、traceを保存して継続調査します。全体検証完了とは扱いません。過去の自然発生した候補欠落がすべて今回の競合だったという証拠はなく、native異常終了も未解決です。
 

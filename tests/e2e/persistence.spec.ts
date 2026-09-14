@@ -13,16 +13,21 @@ async function launch(existing?: string) {
 }
 test('real worker saves, cancels exit on disk failure, retries, and restores a clean run', async () => {
   const { app, page, root } = await launch()
-  let blocked = false
+  let diskState: 'original' | 'backedUp' | 'obstructed' = 'original'
   let run = ''
+  const failures: { stage: string; error: unknown }[] = []
+  const restoreDisk = async () => {
+    if (diskState === 'obstructed') { await rename(path.join(run, 'persistence'), path.join(run, 'obstruction.txt')); diskState = 'backedUp' }
+    if (diskState === 'backedUp') { await rename(path.join(run, 'saved-persistence'), path.join(run, 'persistence')); diskState = 'original' }
+  }
   try {
     await expect(page.getByTestId('persistence-status')).toContainText('保存済み')
     const snapshot = await page.evaluate(() => window.persona.snapshot())
     run = snapshot.root
     await page.evaluate(() => window.persona.saveNow())
     await expect(page.getByTestId('persistence-status')).toContainText('保存済み')
-    await rename(path.join(run, 'persistence'), path.join(run, 'saved-persistence'))
-    await writeFile(path.join(run, 'persistence'), 'fixture directory obstruction'); blocked = true
+    await rename(path.join(run, 'persistence'), path.join(run, 'saved-persistence')); diskState = 'backedUp'
+    await writeFile(path.join(run, 'persistence'), 'fixture directory obstruction'); diskState = 'obstructed'
     await app.evaluate(({ dialog, BrowserWindow }) => {
       const fixture = globalThis as unknown as { exitChoices: string[] }
       fixture.exitChoices = []
@@ -33,15 +38,21 @@ test('real worker saves, cancels exit on disk failure, retries, and restores a c
     expect(await app.evaluate(({ BrowserWindow }) => BrowserWindow.getAllWindows().length)).toBe(1)
     const choices = await app.evaluate(() => (globalThis as unknown as { exitChoices: string[] }).exitChoices)
     expect(choices).toEqual(['再試行', '終了を取り消す', '保存せず終了'])
-    await rename(path.join(run, 'persistence'), path.join(run, 'obstruction.txt'))
-    await rename(path.join(run, 'saved-persistence'), path.join(run, 'persistence')); blocked = false
+    await test.step('restore the obstructed persistence directory', restoreDisk)
     await page.getByRole('button', { name: '今すぐ保存' }).click()
     await expect(page.getByTestId('persistence-status')).toContainText('保存済み')
     await page.screenshot({ path: path.join(root, 'saved-after-retry.png') })
-  } finally {
-    if (blocked) { await rename(path.join(run, 'persistence'), path.join(run, 'obstruction.txt')); await rename(path.join(run, 'saved-persistence'), path.join(run, 'persistence')) }
-    await app.close()
+  } catch (error) { failures.push({ stage: 'test', error }) }
+  finally {
+    try { await restoreDisk() } catch (error) { failures.push({ stage: 'restore', error }) }
+    try {
+      if (failures.length) await app.evaluate(({ dialog }) => {
+        dialog.showMessageBox = (async () => ({ response: 2, checkboxChecked: false })) as typeof dialog.showMessageBox
+      })
+      await app.close()
+    } catch (error) { failures.push({ stage: 'close', error }) }
   }
+  if (failures.length) throw new AggregateError(failures.map(item => item.error), failures.map(({ stage, error }) => `${stage}: ${error instanceof Error ? error.stack : String(error)}`).join('\n'), { cause: failures[0].error })
   expect(JSON.parse(await readFile(path.join(run, 'persistence/manifest.json'), 'utf8')).dirty).toBe(false)
   const restored = await launch(root)
   try {
