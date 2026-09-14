@@ -20,7 +20,8 @@
 | `25741c4` | 起動が遅い端末の停止時に未確定PIDへシグナルを送る不具合を修正 | [14](14-terminal-startup-shutdown.md) |
 | `2a0f08e` | NPCの比較結果を、両側の根拠・資料のhash付きでMarkdownへコピー | [15](15-review-comparison-report.md) |
 | `a947775` | 外部リンク経由の保存拒否時に、ワールド外へ空ディレクトリを作る不具合を修正 | [16](16-workspace-write-boundary.md) |
-| `git log --oneline -- improvements/17-workspace-dot-prefix.md`で確認 | `..notes.md`等の正当な名前をワールド外と誤判定する不具合を修正 | [17](17-workspace-dot-prefix.md) |
+| `750f852` | `..notes.md`等の正当な名前をワールド外と誤判定する不具合を修正 | [17](17-workspace-dot-prefix.md) |
+| `git log --oneline -- improvements/18-native-crash-diagnostics.md`で確認 | native例外のコード・stack・dumpを採取する診断手段。異常終了自体は未解決 | [18](18-native-crash-diagnostics.md) |
 
 各コミットの直後に差分の自己レビューを実施しました。機能ごとに取り消す場合は、作業ツリーの変更を確認したうえで`git revert <commit>`を使えます。全体を戻す場合は表の下から上の順にrevertしてください。
 
@@ -43,6 +44,8 @@
 最終ソースでbuild・typecheck・lint成功、単体53・backend129・保存4・Electron E2E18がPASS。CLI検証の初回は7件成功・`life-tools.test.ts`のworkerが終了コード`3221226505`で異常終了しました。該当テスト単独と、他の検査を同時実行しない正式CLI検証8件は再実行で成功しています。全212件の成功結果は得られましたが、native異常終了は再発しており未解決です。最新の終了コード・失敗と診断の記録は[17](17-workspace-dot-prefix.md)に記載しています。次はnative例外発生地点の取得を優先します。
 
 端末の同時終了時のnative競合には[12](12-native-terminal-exit.md)で上流修正版を適用し、[13](13-terminal-resource-cleanup.md)でworker残留を修正してクリーンインストールも検証しました。さらに起動が遅い端末の停止時に未確定PIDへシグナルを送る不具合を修正しました。今回再発した`3221226505`の直接のstackは未取得です。過去の全異常終了を解消したとは断定せず、既存のテスト除外・閾値・警告設定も変更していません。
+
+[18](18-native-crash-diagnostics.md)では、意図的なfixture例外でnative stackの採取手段を検証しました。診断配下のCLI8件と保存4件の並行実行、対象CLIテスト最大5回とE2E18件の並行実行では再発しませんでした。これは原因解消の証明ではなく、次の再発を調査するための手段と記録です。
 
 追加機能はローカルfixtureで保存・IPC・画面操作まで検証できたため、ユーザーの最新指示に従って実モデルの試運転はスキップしました。ChatGPT推論・APIキーの使用は開始していません。既存ワールドの削除も実施していません。今後、実モデルが必要な検証をする場合は全モデルを5.6 Luna / low固定とし、通常の機能確認は3日（12ターン）を基準にします。
 
