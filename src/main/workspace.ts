@@ -44,6 +44,16 @@ export class Workspace {
     if (!relative || relative.startsWith('../')) return
     this.view.fileVersions![relative] = (this.view.fileVersions![relative] ?? 0) + 1
     const parts = relative.split('/')
+    let addedEntry: FileEntry | undefined
+    if (event === 'add' || event === 'addDir' || event === 'change') {
+      try {
+        const metadata = await stat(await this.resolve(relative))
+        addedEntry = { name: parts.at(-1)!, path: relative, kind: metadata.isDirectory() ? 'directory' : 'file', ...(metadata.isDirectory() ? { children: [] } : {}) }
+      } catch (error) {
+        if (!(error instanceof Error && 'code' in error && error.code === 'ENOENT')) throw error
+        event = 'unlink'
+      }
+    }
     let entries = this.view.files
     for (let index = 0; index < parts.length - 1; index++) {
       let directory = entries.find(entry => entry.name === parts[index] && entry.kind === 'directory')
@@ -55,12 +65,7 @@ export class Workspace {
     }
     const index = entries.findIndex(entry => entry.path === relative)
     if (event === 'unlink' || event === 'unlinkDir') { if (index !== -1) entries.splice(index, 1) }
-    else if (event === 'add' || event === 'addDir') {
-      const resolved = await this.resolve(relative)
-      const metadata = await stat(resolved)
-      const entry: FileEntry = { name: parts.at(-1)!, path: relative, kind: metadata.isDirectory() ? 'directory' : 'file', ...(metadata.isDirectory() ? { children: [] } : {}) }
-      if (index === -1) entries.push(entry)
-    }
+    else if (addedEntry && index === -1) entries.push(addedEntry)
     entries.sort((a, b) => Number(b.kind === 'directory') - Number(a.kind === 'directory') || a.name.localeCompare(b.name))
     this.view = { ...this.view, version: this.view.version + 1 }
     this.publish(this.view)

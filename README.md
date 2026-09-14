@@ -36,6 +36,8 @@ Windows端末の終了後にworkerが残る別の不具合には、`patch-packag
 
 chokidar 5.0.0にも[監視開始順序のパッチ](improvements/48-watch-before-directory-scan.md)を適用しています。新しいディレクトリの初回列挙後、監視開始前に作られたファイルが一覧から欠ける競合を防ぎます。同じ`postinstall`で自動適用されます。
 
+このパッチには、[ファイルからディレクトリへの置換と復元後の通知順序の修正](improvements/51-directory-replacement-watch.md)も含みます。復元したディレクトリの子と、その後の追加・更新を一覧へ反映します。48の旧パッチを適用した依存環境から更新する場合は、`npm ci`で依存を再インストールしてください。
+
 ## 実Codexでの操作
 
 1. 「ChatGPTで接続」または「APIキーで接続」を選びます。ChatGPTログインは外部ブラウザーで完了します。APIキーはアプリのパスワード入力欄へ入力してください。

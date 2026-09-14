@@ -41,6 +41,7 @@ test('real worker saves, cancels exit on disk failure, retries, and restores a c
     await test.step('restore the obstructed persistence directory', restoreDisk)
     await page.getByRole('button', { name: '今すぐ保存' }).click()
     await expect(page.getByTestId('persistence-status')).toContainText('保存済み')
+    await expect(page.getByRole('button', { name: 'manifest.json', exact: true })).toBeVisible()
     await page.screenshot({ path: path.join(root, 'saved-after-retry.png') })
   } catch (error) { failures.push({ stage: 'test', error }) }
   finally {

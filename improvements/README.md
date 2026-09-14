@@ -53,7 +53,8 @@
 | `bb9f623` | 比較候補欠落の監視経路を追加診断。正常時の通知記録・調査範囲・未解決事項を保存 | [47](47-workspace-watch-observations.md) |
 | `f338d1d` | ディレクトリ列挙後・監視開始前に作られたファイルが一覧から欠ける競合を修正 | [48](48-watch-before-directory-scan.md) |
 | `e25ede3` | 保存テストで元のエラーを保持し、復元途中の失敗でも後片付けとアプリ終了を試行 | [49](49-persistence-test-cleanup.md) |
-| `git log --oneline -- improvements/50-directory-replacement-diagnostic.md`で確認 | ファイルを挟んだディレクトリ復元後の一覧欠落を、独立診断で再現・記録（未修正） | [50](50-directory-replacement-diagnostic.md) |
+| `e4ea30e` | ファイルを挟んだディレクトリ復元後の一覧欠落を、独立診断で再現・記録（50時点では未修正） | [50](50-directory-replacement-diagnostic.md) |
+| `git log --oneline -- improvements/51-directory-replacement-watch.md`で確認 | ディレクトリ復元後の監視・一覧欠落を修正。種類変更、通知順序、走査終了・監視解除を検証 | [51](51-directory-replacement-watch.md) |
 
 各コミットの直後に差分の自己レビューを実施しました。機能ごとに取り消す場合は、作業ツリーの変更を確認したうえで`git revert <commit>`を使えます。全体を戻す場合は表の下から上の順にrevertしてください。
 
@@ -81,7 +82,9 @@
 
 ## 検証の結論と残る範囲
 
-[50](50-directory-replacement-diagnostic.md)で、ディレクトリを一時ファイルへ置き換えて元へ戻すと、子ファイルが公開一覧から欠ける別の監視不具合を再現しました。ファイル判定後、書き込み完了待ち中にディレクトリへ変わってもファイル用addのまま通知され、子が監視されていません。typecheck・lintは成功し、独立診断は1件FAIL・1件PASSで実ディスクと通知記録も照合しました。不具合は未修正で、通常検証の成功とは扱いません。48のrename失敗やnative異常終了との同一性は未確認です。修正候補は検証で改善せず、復元をhashで確認しています。
+[51](51-directory-replacement-watch.md)で、50のディレクトリ復元後の監視・一覧欠落を修正しました。種類変更と通知順序に加え、走査エラー後の抑制解除、追加待ちファイルの監視解放も修正しています。build・typecheck・lintと、単体84・backend170・通常Electron34・CLI8・保存4の計300件が成功しました。独立診断2件と通常Electronでの復元5件も成功し、`manifest.json`の画面復帰を確認しました。実モデル推論は行っていません。48の自然発生したrename失敗や過去の`C0000409`は未解決です。ユーザーから報告された別の`0x80000003`は、sandbox内でのGPU子プロセス起動失敗との関連を記録しています。
+
+[50](50-directory-replacement-diagnostic.md)は修正前の診断記録です。ディレクトリを一時ファイルへ置き換えて元へ戻すと、子ファイルが公開一覧から欠ける監視不具合を再現し、1件FAIL・1件PASSで実ディスクと通知記録を照合しました。当時の候補は改善せず復元しています。後続の修正と検証は51を参照してください。
 
 [49](49-persistence-test-cleanup.md)で、保存テストの復元を工程ごとに管理し、元のエラーと後片付けの例外を保持して、復元失敗時も検証用アプリの終了を試みるようにしました。typecheck・lint、通常E2E全34件が成功しました。意図的な障害2件ではエラー保持・復元状態・Electron exit 0を確認しています。アプリ本体は変更していません。48の自然発生した復元失敗は診断10回でも再現せず、原因未確定です。今回の成功で元の失敗やnative異常終了を解消済みとは扱いません。
 

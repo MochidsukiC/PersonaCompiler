@@ -1,7 +1,111 @@
+diff --git a/node_modules/chokidar/handler.d.ts b/node_modules/chokidar/handler.d.ts
+index 520571a..a6ffdbe 100644
+--- a/node_modules/chokidar/handler.d.ts
++++ b/node_modules/chokidar/handler.d.ts
+@@ -54,7 +54,7 @@ export declare class NodeFsHandler {
+      * Watch a file and emit add event if warranted.
+      * @returns closer for the watcher instance
+      */
+-    _handleFile(file: Path, stats: Stats, initialAdd: boolean): (() => void) | undefined;
++    _handleFile(file: Path, stats: Stats, initialAdd: boolean, priorWh?: WatchHelper, depth?: number): (() => void) | undefined;
+     /**
+      * Handle symlinks encountered while reading a dir.
+      * @param entry returned by readdirp
 diff --git a/node_modules/chokidar/handler.js b/node_modules/chokidar/handler.js
+index 6b12880..752c4f5 100644
 --- a/node_modules/chokidar/handler.js
 +++ b/node_modules/chokidar/handler.js
-@@ -541,17 +541,19 @@ export class NodeFsHandler {
+@@ -336,7 +336,7 @@ export class NodeFsHandler {
+      * Watch a file and emit add event if warranted.
+      * @returns closer for the watcher instance
+      */
+-    _handleFile(file, stats, initialAdd) {
++    _handleFile(file, stats, initialAdd, priorWh, depth = 0) {
+         if (this.fsw.closed) {
+             return;
+         }
+@@ -348,19 +348,30 @@ export class NodeFsHandler {
+         // if the file is already being watched, do nothing
+         if (parent.has(basename))
+             return;
++        let replaced = false;
++        const onDirectory = () => {
++            if (replaced || this.fsw.closed)
++                return;
++            replaced = true;
++            this.fsw._closePath(file);
++            this.fsw._incrReadyCount();
++            void this._addToNodeFs(file, false, priorWh, depth);
++        };
+         const listener = async (path, newStats) => {
++            if (replaced)
++                return;
+             if (!this.fsw._throttle(THROTTLE_MODE_WATCH, file, 5))
+                 return;
+             if (!newStats || newStats.mtimeMs === 0) {
+                 try {
+                     const newStats = await stat(file);
+-                    if (this.fsw.closed)
++                    if (this.fsw.closed || replaced)
+                         return;
+                     // Check that change event was not fired because of changed only accessTime.
+                     const at = newStats.atimeMs;
+                     const mt = newStats.mtimeMs;
+                     if (!at || at <= mt || mt !== prevStats.mtimeMs) {
+-                        this.fsw._emit(EV.CHANGE, file, newStats);
++                        this.fsw._emit(EV.CHANGE, file, newStats, onDirectory);
+                     }
+                     if ((isMacos || isLinux || isFreeBSD) && prevStats.ino !== newStats.ino) {
+                         this.fsw._closeFile(path);
+@@ -375,7 +386,8 @@ export class NodeFsHandler {
+                 }
+                 catch (error) {
+                     // Fix issues where mtime is null but file is still present
+-                    this.fsw._remove(dirname, basename);
++                    if (!replaced)
++                        this.fsw._remove(dirname, basename);
+                 }
+                 // add is about to be emitted if file not already tracked in parent
+             }
+@@ -384,7 +396,7 @@ export class NodeFsHandler {
+                 const at = newStats.atimeMs;
+                 const mt = newStats.mtimeMs;
+                 if (!at || at <= mt || mt !== prevStats.mtimeMs) {
+-                    this.fsw._emit(EV.CHANGE, file, newStats);
++                    this.fsw._emit(EV.CHANGE, file, newStats, onDirectory);
+                 }
+                 prevStats = newStats;
+             }
+@@ -395,7 +407,7 @@ export class NodeFsHandler {
+         if (!(initialAdd && this.fsw.options.ignoreInitial) && this.fsw._isntIgnored(file)) {
+             if (!this.fsw._throttle(EV.ADD, file, 0))
+                 return;
+-            this.fsw._emit(EV.ADD, file, stats);
++            this.fsw._emit(EV.ADD, file, stats, onDirectory);
+         }
+         return closer;
+     }
+@@ -487,11 +499,17 @@ export class NodeFsHandler {
+                 path = sp.join(dir, sp.relative(dir, path));
+                 this._addToNodeFs(path, initialAdd, wh, depth + 1);
+             }
+-        })
+-            .on(EV.ERROR, this._boundHandleError);
++        });
+         return new Promise((resolve, reject) => {
+             if (!stream)
+                 return reject();
++            stream.once(EV.ERROR, (error) => {
++                if (throttler)
++                    throttler.clear();
++                stream = undefined;
++                resolve(undefined);
++                this._boundHandleError(error);
++            });
+             stream.once(STR_END, () => {
+                 if (this.fsw.closed) {
+                     stream = undefined;
+@@ -541,17 +559,19 @@ export class NodeFsHandler {
          let closer;
          const oDepth = this.fsw.options.depth;
          if ((oDepth == null || depth <= oDepth) && !this.fsw._symlinkPaths.has(realpath)) {
@@ -26,3 +130,84 @@ diff --git a/node_modules/chokidar/handler.js b/node_modules/chokidar/handler.js
          }
          return closer;
      }
+@@ -615,7 +635,7 @@ export class NodeFsHandler {
+                 }
+             }
+             else {
+-                closer = this._handleFile(wh.watchPath, stats, initialAdd);
++                closer = this._handleFile(wh.watchPath, stats, initialAdd, wh, depth);
+             }
+             ready();
+             if (closer)
+diff --git a/node_modules/chokidar/index.d.ts b/node_modules/chokidar/index.d.ts
+index edfe0df..bd95b8b 100644
+--- a/node_modules/chokidar/index.d.ts
++++ b/node_modules/chokidar/index.d.ts
+@@ -138,7 +138,7 @@ export declare class FSWatcher extends EventEmitter<FSWatcherEventMap> {
+      * @param stats arguments to be passed with event
+      * @returns the error if defined, otherwise the value of the FSWatcher instance's `closed` flag
+      */
+-    _emit(event: EventName, path: Path, stats?: Stats): Promise<this | undefined>;
++    _emit(event: EventName, path: Path, stats?: Stats, onDirectory?: () => void): Promise<this | undefined>;
+     /**
+      * Common handler for errors
+      * @returns The error if defined, otherwise the value of the FSWatcher instance's `closed` flag
+diff --git a/node_modules/chokidar/index.js b/node_modules/chokidar/index.js
+index f264829..ff6e2a9 100644
+--- a/node_modules/chokidar/index.js
++++ b/node_modules/chokidar/index.js
+@@ -466,7 +466,7 @@ export class FSWatcher extends EventEmitter {
+      * @param stats arguments to be passed with event
+      * @returns the error if defined, otherwise the value of the FSWatcher instance's `closed` flag
+      */
+-    async _emit(event, path, stats) {
++    async _emit(event, path, stats, onDirectory) {
+         if (this.closed)
+             return;
+         const opts = this.options;
+@@ -499,6 +499,11 @@ export class FSWatcher extends EventEmitter {
+                 event = EV.CHANGE;
+                 this._pendingUnlinks.delete(path);
+             }
++            if (event === EV.ADD_DIR && this._pendingUnlinks.has(path)) {
++                const pending = this._pendingUnlinks.get(path);
++                this._pendingUnlinks.delete(path);
++                this.emitWithAll(EV.UNLINK, pending.slice(1));
++            }
+         }
+         if (awf && (event === EV.ADD || event === EV.CHANGE) && this._readyEmitted) {
+             const awfEmit = (err, stats) => {
+@@ -508,6 +513,12 @@ export class FSWatcher extends EventEmitter {
+                     this.emitWithAll(event, args);
+                 }
+                 else if (stats) {
++                    if (stats.isDirectory() && onDirectory) {
++                        if (event === EV.CHANGE)
++                            this.emitWithAll(EV.UNLINK, [path]);
++                        onDirectory();
++                        return;
++                    }
+                     // if stats doesn't exist the file must have been deleted
+                     if (args.length > 1) {
+                         args[1] = stats;
+@@ -744,17 +755,16 @@ export class FSWatcher extends EventEmitter {
+         let relPath = path;
+         if (this.options.cwd)
+             relPath = sp.relative(this.options.cwd, path);
++        let pendingAdd = false;
+         if (this.options.awaitWriteFinish && this._pendingWrites.has(relPath)) {
+-            const event = this._pendingWrites.get(relPath).cancelWait();
+-            if (event === EV.ADD)
+-                return;
++            pendingAdd = this._pendingWrites.get(relPath).cancelWait() === EV.ADD;
+         }
+         // The Entry will either be a directory that just got removed
+         // or a bogus entry to a file, in either case we have to remove it
+         this._watched.delete(path);
+         this._watched.delete(fullPath);
+         const eventName = isDirectory ? EV.UNLINK_DIR : EV.UNLINK;
+-        if (wasTracked && !this._isIgnored(path))
++        if (wasTracked && !pendingAdd && !this._isIgnored(path))
+             this._emit(eventName, path);
+         // Avoid conflicts if we later create another file with the same name
+         this._closePath(path);
