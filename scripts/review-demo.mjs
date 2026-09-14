@@ -81,6 +81,9 @@ try {
       await writeFile(path.join(base, `${format.split('/')[0]}.md`), report)
       return JSON.parse(blocks[0][1])
     }
+    const fullReport = await copyAndRead(page.getByRole('article', { name: 'NPC制作レビュー' }), '制作レビュー全体をコピー', '制作レビュー全体と元資料の参照情報をコピーしました。', 'persona-review-full/v1')
+    expect(fullReport.review).toEqual(current)
+    expect(fullReport.source).toEqual({ path: reviewPath, hash: hash(JSON.stringify(current, null, 2)) })
     const reviewReport = await copyAndRead(comparison, '比較レポートをコピー', '比較結果と両側の資料をコピーしました。', 'persona-review-comparison/v1')
     expect(reviewReport.before.review).toEqual(baseline)
     expect(reviewReport.after.review).toEqual(current)
@@ -101,7 +104,7 @@ try {
     await openComparison()
     await page.screenshot({ path: path.join(base, 'review-demo.png') })
     expect(errors).toEqual([])
-    console.info('PASS: review comparison, package file comparison, actual clipboard JSON, five-file integrity, renderer errors 0')
+    console.info('PASS: full review export, review comparison, package file comparison, actual clipboard JSON, five-file integrity, renderer errors 0')
   } else {
     await whenClosed
   }

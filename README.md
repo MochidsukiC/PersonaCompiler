@@ -24,6 +24,8 @@ npm start
 
 manifestの画面で「別のパッケージとファイルを比較」を開き、基準に`Compilation baseline`を選ぶと、全登録ファイルの差分も確認できます。ファイルの形式によらずhashで比較し、追加・削除・内容変更と欠損を分けて表示します。結果と両側の照合記録をMarkdownとJSONでコピーできます。
 
+制作レビューの上部にある「制作レビュー全体をコピー」で、読み込み済みの全設定・全根拠・Runtime向けの指針・Runtime Promptを、元ファイルのhashと採取時刻付きで持ち出せます。検索中でも全体を収録し、Markdownの末尾にはJSONも含みます。`review.md`は生成時のレポートなので、`review.json`を外部編集した後は画面の更新を確認して全体コピーを使ってください。空の区分や未引用の資料も保持し、ゲーム固有の形式へ変換する処理は行いません。
+
 このデモはゲームへの組み込み前に資料を確認する操作例で、実際のAI生成結果や生活シミュレーションの品質を示すものではありません。認証・Codex CLI・実モデルは使用しません。実行ごとに`.local/review-demo-*`へワールドとElectronのprofileを分けて作り、既存ワールドを読み込まず、再実行でも前の資料を上書きしません。保存先はコンソールに表示します。自動検証は`npm run test:review-demo`です（実クリップボードを書き換え、比較・照合レポートと画面画像を同じデモ用ディレクトリへ保存します）。
 
 `codex.exe` をPATHに置くか、`PERSONA_CODEX_BIN`へ実行ファイルの絶対パスを指定してください。アプリは接続ボタンから専用App Serverを起動し、backendと実CLIの両方が同じConversationへ接続します。App ServerのWebSocketはlocalhost限定で、起動ごとに生成するcapability tokenで認証します。
