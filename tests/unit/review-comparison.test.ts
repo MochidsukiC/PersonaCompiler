@@ -88,3 +88,30 @@ it('matches unchanged duplicates before pairing changed evidence and preserves s
   after.sections[0].title = '目標'
   expect(compareCharacterReviews(before, after).changes.map(c => c.kind)).toEqual(['removed', 'removed', 'added'])
 })
+
+it('preserves duplicate pairing and change order after matching exact settings first', () => {
+  const before = review(), after = review()
+  for (const value of [before, after]) value.sources.push({ id: 'c', title: '台本', text: '別の根拠' }, { id: 'd', title: '翻訳', text: '新しい根拠' })
+  before.sections[0].claims = [{ text: '同じ文', evidence: ['a'] }, { text: '削除する文', evidence: ['a'] }, { text: '同じ文', evidence: ['c'] }, { text: '同じ文', evidence: ['b'] }]
+  after.sections[0].claims = [{ text: '同じ文', evidence: ['b'] }, { text: '同じ文', evidence: ['d'] }, { text: '追加する文', evidence: ['b'] }, { text: '同じ文', evidence: ['a'] }, { text: '同じ文', evidence: ['d'] }]
+  const original = structuredClone({ before, after })
+  expect(compareCharacterReviews(before, after)).toEqual({ unchanged: 2, fields: [], changes: [
+    { kind: 'removed', section: '人格', text: '削除する文', before: [before.sources[0]], after: [] },
+    { kind: 'evidence', section: '人格', text: '同じ文', before: [before.sources[2]], after: [after.sources[3]] },
+    { kind: 'added', section: '人格', text: '追加する文', before: [], after: [after.sources[1]] },
+    { kind: 'added', section: '人格', text: '同じ文', before: [], after: [after.sources[3]] }
+  ] })
+  expect({ before, after }).toEqual(original)
+})
+
+it('keeps arbitrary section, text and source keys distinct and detects source titles', () => {
+  const before = review()
+  before.sources = [{ id: '__proto__', title: '資料', text: '本文' }, { id: 'script:Route-B/phase-2', title: '資料', text: '本文' }]
+  before.sections = [{ title: 'a|b', claims: [{ text: 'c', evidence: ['__proto__'] }] }, { title: 'a', claims: [{ text: 'b|c', evidence: ['script:Route-B/phase-2'] }] }]
+  const after = structuredClone(before)
+  after.sections.reverse()
+  after.sources[0].title = '更新した題名'
+  expect(compareCharacterReviews(before, after)).toEqual({ unchanged: 1, fields: [], changes: [
+    { kind: 'evidence', section: 'a|b', text: 'c', before: [before.sources[0]], after: [after.sources[0]] }
+  ] })
+})
