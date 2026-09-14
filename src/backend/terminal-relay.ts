@@ -1,7 +1,11 @@
 import WebSocket, { WebSocketServer } from 'ws'
 import { timingSafeEqual } from 'node:crypto'
+import { z } from 'zod'
 import type { IncomingMessage } from 'node:http'
 import type { SessionBinding } from '../core/contracts'
+
+const relayEnvelopeSchema = z.object({ id: z.union([z.string(), z.number()]).optional(), method: z.string().optional() }).passthrough()
+const clientEnvelopeSchema = relayEnvelopeSchema.extend({ params: z.record(z.string(), z.unknown()).nullable().optional() })
 
 // Remote TUI supplies cwd on turn/start, which enables the default environment.
 // Keep the host's life-thread capabilities when forwarding that request.
@@ -28,15 +32,15 @@ export class TerminalRelay {
       this.upstreams.add(upstream)
       const queued: string[] = []
       const requests = new Map<string | number, { method: string; id: string | number }>()
-      const fail = (error: Error) => { this.failed(new Error(`生活端末接続: ${error.message}`)); client.terminate(); upstream.terminate() }
+      const fail = (error: Error) => { this.failed(new Error(`生活端末接続: ${error.message}`, { cause: error })); client.terminate(); upstream.terminate() }
       client.on('error', fail); upstream.on('error', fail)
       client.on('close', () => upstream.terminate())
       upstream.on('close', () => { this.upstreams.delete(upstream); client.close() })
       upstream.on('open', () => { for (const message of queued) upstream.send(message); queued.length = 0 })
       upstream.on('message', data => {
         let message: { id?: string | number; method?: string }
-        try { message = JSON.parse(data.toString()) }
-        catch { fail(new Error('App Serverが不正なJSONを返しました')); return }
+        try { message = relayEnvelopeSchema.parse(JSON.parse(data.toString())) }
+        catch (error) { fail(new Error('App Serverが不正なRPCメッセージを返しました', { cause: error })); return }
         if (!message.method && message.id !== undefined) {
           const request = requests.get(message.id)
           if (request) { this.pending.delete(request); requests.delete(message.id); for (const wake of this.waiters) wake() }
@@ -44,9 +48,9 @@ export class TerminalRelay {
         if (client.readyState === WebSocket.OPEN) client.send(data.toString())
       })
       client.on('message', data => {
-        let message: { id?: string | number; method?: string; params?: Record<string, unknown> }
-        try { message = JSON.parse(data.toString()) }
-        catch { client.close(1007, 'Invalid JSON'); return }
+        let message: z.infer<typeof clientEnvelopeSchema>
+        try { message = clientEnvelopeSchema.parse(JSON.parse(data.toString())) }
+        catch { client.close(1007, 'Invalid RPC message'); return }
         const params = message.params
         const inference = ['turn/start', 'turn/steer', 'thread/compact/start', 'thread/inject_items', 'thread/start'].includes(message.method ?? '')
         if (inference && typeof params?.threadId === 'string' && this.readOnly.has(params.threadId)) {

@@ -1,8 +1,54 @@
 import { expect, it, vi } from 'vitest'
-import { WebSocketServer } from 'ws'
+import WebSocket, { WebSocketServer } from 'ws'
 import { TerminalRelay } from '../../src/backend/terminal-relay'
 import { RpcClient } from '../../src/backend/rpc'
 import type { SessionBinding } from '../../src/core/contracts'
+
+it.each(['client', 'upstream'] as const)('rejects malformed RPC envelopes from %s and continues serving valid messages', async direction => {
+  const server = new WebSocketServer({ host: '127.0.0.1', port: 0 })
+  await new Promise<void>(resolve => server.once('listening', resolve))
+  const address = server.address()
+  if (!address || typeof address === 'string') throw new Error('Missing upstream port')
+  const forwarded: unknown[] = []
+  server.on('connection', socket => socket.on('message', bytes => { forwarded.push(JSON.parse(bytes.toString())); socket.send(bytes.toString()) }))
+  const failures: Error[] = []
+  const relay = new TerminalRelay(`ws://127.0.0.1:${address.port}`, 'token', error => failures.push(error))
+  let client: WebSocket | undefined
+  try {
+    await relay.open()
+    const endpoint = relay.register({ agentId: 'npc', sessionId: 'npc', role: 'npc', threadId: 'thread', cwd: 'work', modelId: 'fixture', effort: 'low', creation: 'initialized', seedPersisted: true, lifeToolsVersion: 1 })
+    const connect = async () => {
+      client = new WebSocket(endpoint, { headers: { Authorization: 'Bearer token' } })
+      await new Promise<void>((resolve, reject) => { client!.once('open', resolve); client!.once('error', reject) })
+      await vi.waitFor(() => expect(server.clients.size).toBe(1))
+      return client
+    }
+    const invalid = ['{broken', ...[null, [], false, 'invalid', { id: [] }, { method: 9 }, ...(direction === 'client' ? [{ method: 'turn/start', params: 'invalid' }, { method: 'turn/start', params: [] }] : [])].map(value => JSON.stringify(value))]
+    for (const raw of invalid) {
+      const connected = await connect()
+      let closeCode: number | undefined
+      connected.once('close', code => { closeCode = code })
+      if (direction === 'client') connected.send(raw)
+      else [...server.clients][0].send(raw)
+      await vi.waitFor(() => expect(connected.readyState).toBe(WebSocket.CLOSED), { timeout: 1000 })
+      if (direction === 'client') expect(closeCode).toBe(1007)
+      await vi.waitFor(() => expect(server.clients.size).toBe(0))
+    }
+    expect(forwarded).toEqual([])
+    if (direction === 'upstream') {
+      expect(failures.filter(error => error.message.includes('不正なRPC'))).toHaveLength(invalid.length)
+      expect(failures[0].cause).toBeInstanceOf(Error)
+      expect((failures[0].cause as Error).cause).toBeInstanceOf(SyntaxError)
+    }
+    else expect(failures).toEqual([])
+    const connected = await connect()
+    const valid = { jsonrpc: '2.0', id: 42, method: 'thread/read', params: null, extension: { keep: true } }
+    const response = new Promise<unknown>(resolve => connected.once('message', bytes => resolve(JSON.parse(bytes.toString()))))
+    connected.send(JSON.stringify(valid))
+    expect(await response).toEqual(valid)
+    expect(forwarded).toEqual([valid])
+  } finally { client?.terminate(); await relay.close(); for (const socket of server.clients) socket.terminate(); await new Promise<void>(resolve => server.close(() => resolve())) }
+})
 
 it('authenticates the TUI relay and keeps life environment, model and effort overrides on the same thread', async () => {
   const server = new WebSocketServer({ host: '127.0.0.1', port: 0 })

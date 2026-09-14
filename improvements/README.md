@@ -21,7 +21,8 @@
 | `2a0f08e` | NPCの比較結果を、両側の根拠・資料のhash付きでMarkdownへコピー | [15](15-review-comparison-report.md) |
 | `a947775` | 外部リンク経由の保存拒否時に、ワールド外へ空ディレクトリを作る不具合を修正 | [16](16-workspace-write-boundary.md) |
 | `750f852` | `..notes.md`等の正当な名前をワールド外と誤判定する不具合を修正 | [17](17-workspace-dot-prefix.md) |
-| `git log --oneline -- improvements/18-native-crash-diagnostics.md`で確認 | native例外のコード・stack・dumpを採取する診断手段。異常終了自体は未解決 | [18](18-native-crash-diagnostics.md) |
+| `d27e9c3` | native例外のコード・stack・dumpを採取する診断手段。異常終了自体は未解決 | [18](18-native-crash-diagnostics.md) |
+| `git log --oneline -- improvements/19-terminal-rpc-envelope.md`で確認 | 不正なRPC受信による端末中継の未処理例外を修正 | [19](19-terminal-rpc-envelope.md) |
 
 各コミットの直後に差分の自己レビューを実施しました。機能ごとに取り消す場合は、作業ツリーの変更を確認したうえで`git revert <commit>`を使えます。全体を戻す場合は表の下から上の順にrevertしてください。
 
@@ -41,7 +42,9 @@
 
 ## 検証の結論と残る範囲
 
-最終ソースでbuild・typecheck・lint成功、単体53・backend129・保存4・Electron E2E18がPASS。CLI検証の初回は7件成功・`life-tools.test.ts`のworkerが終了コード`3221226505`で異常終了しました。該当テスト単独と、他の検査を同時実行しない正式CLI検証8件は再実行で成功しています。全212件の成功結果は得られましたが、native異常終了は再発しており未解決です。最新の終了コード・失敗と診断の記録は[17](17-workspace-dot-prefix.md)に記載しています。次はnative例外発生地点の取得を優先します。
+最終ソースでbuild・typecheck・lint成功、単体53・backend131・CLI/TUI接続8・保存4・Electron E2E18の計214件PASS。最新の終了コードとログは[19](19-terminal-rpc-envelope.md)に記載しています。不正なRPCを受信した際の未処理TypeErrorは両方向で再現し、修正しました。
+
+別件として[17](17-workspace-dot-prefix.md)のCLI検証では`life-tools.test.ts`のworkerが終了コード`3221226505`で異常終了しました。該当テスト単独と正式CLI検証の再実行は成功していますが、native異常終了は未解決です。今回のRPC形式検証によって解消したとは扱いません。
 
 端末の同時終了時のnative競合には[12](12-native-terminal-exit.md)で上流修正版を適用し、[13](13-terminal-resource-cleanup.md)でworker残留を修正してクリーンインストールも検証しました。さらに起動が遅い端末の停止時に未確定PIDへシグナルを送る不具合を修正しました。今回再発した`3221226505`の直接のstackは未取得です。過去の全異常終了を解消したとは断定せず、既存のテスト除外・閾値・警告設定も変更していません。
 
