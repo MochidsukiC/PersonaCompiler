@@ -33,8 +33,10 @@ import { constructedMap } from '../core/construction'
 import { validateLifeSpecification } from '../core/spatial'
 import { PersistenceCoordinator } from './persistence-coordinator'
 import type { PersistencePortFactory } from '../core/persistence'
+import { defaultDirectionSettings, directionPromptBlock, directionSettingsSchema, resolveNpcDialogueSettings } from '../core/direction-settings'
+import { activeQuestDirective, defaultQuestSettings, questSettingsSchema } from '../core/quest-settings'
 
-const persistedSchema = z.object({ dev: devStateSchema.optional(), version: z.literal(1), lifeVersion: z.literal(1).optional(), memoryVersion: z.literal(1).optional(), lifecycleVersion: z.literal(1).optional(), economyVersion: z.literal(1).optional(), economySeed: economySeedSchema.optional(), compilation: compilationSchema.optional(), production: productionOperationSchema.optional(), authMode: z.enum(['chatgpt', 'apiKey']).nullable(), settings: agentModelSettingsSchema.nullable(), preparation: preparationProgressSchema, artifactHash: z.string().nullable() })
+const persistedSchema = z.object({ dev: devStateSchema.optional(), version: z.literal(1), lifeVersion: z.literal(1).optional(), memoryVersion: z.literal(1).optional(), lifecycleVersion: z.literal(1).optional(), economyVersion: z.literal(1).optional(), economySeed: economySeedSchema.optional(), compilation: compilationSchema.optional(), production: productionOperationSchema.optional(), authMode: z.enum(['chatgpt', 'apiKey']).nullable(), settings: agentModelSettingsSchema.nullable(), directionSettings: directionSettingsSchema.optional(), questSettings: questSettingsSchema.optional(), preparation: preparationProgressSchema, artifactHash: z.string().nullable() })
 const turnEventSchema = z.object({ threadId: z.string(), turn: z.object({ id: z.string(), status: z.string().optional(), error: z.object({ message: z.string() }).passthrough().nullable().optional() }).passthrough() })
 const errorMessage = (error: unknown) => messageOf(error)
 const newId = () => randomUUID()
@@ -76,7 +78,7 @@ export class BackendEngine {
   private readonly conversations = new ConversationCache(threadId => this.runtime.conversation(threadId))
   private readonly unsubscribe: () => void
   private readonly unsubscribeExit: () => void
-  private view: BackendSnapshot = { connection: 'disconnected', authMode: null, authenticated: false, login: null, models: [], settings: null, preparation: emptyPreparation(), error: null }
+  private view: BackendSnapshot = { connection: 'disconnected', authMode: null, authenticated: false, login: null, models: [], settings: null, directionSettings: defaultDirectionSettings(), questSettings: defaultQuestSettings(), preparation: emptyPreparation(), error: null }
 
   constructor(private readonly base: string, private readonly runtime: AgentRuntime, readonly sessions: TerminalBridge, private readonly emit: (event: AppEvent) => void, private readonly prompts: PromptProvider = new BootstrapPrompts(), private readonly persistenceFactory?: PersistencePortFactory, private readonly compilerPrompts: CompilerPromptProvider = new StandardCompilerPrompts()) {
     this.unsubscribe = runtime.onNotification(event => this.notification(event))
@@ -111,10 +113,10 @@ export class BackendEngine {
   }
   private async persist(): Promise<void> {
     if (this.persistence) {
-      if (!this.persistence.status.readOnlyReason) this.persistence.setMetadata({ dev: this.dev, version: 1, lifeVersion: this.lifeVersion, memoryVersion: this.memoryVersion, lifecycleVersion: this.lifecycleVersion, economyVersion: this.economyVersion, economySeed: this.economySeed, compilation: this.view.compilation, production: this.production, authMode: this.view.authMode, settings: this.view.settings, preparation: this.view.preparation, artifactHash: this.artifactHash })
+      if (!this.persistence.status.readOnlyReason) this.persistence.setMetadata({ dev: this.dev, version: 1, lifeVersion: this.lifeVersion, memoryVersion: this.memoryVersion, lifecycleVersion: this.lifecycleVersion, economyVersion: this.economyVersion, economySeed: this.economySeed, compilation: this.view.compilation, production: this.production, authMode: this.view.authMode, settings: this.view.settings, directionSettings: this.view.directionSettings, questSettings: this.view.questSettings, preparation: this.view.preparation, artifactHash: this.artifactHash })
       this.publish(); return
     }
-    await this.workspace.write('backend.json', JSON.stringify({ version: 1, lifeVersion: this.lifeVersion, authMode: this.view.authMode, settings: this.view.settings, preparation: this.view.preparation, artifactHash: this.artifactHash }, null, 2))
+    await this.workspace.write('backend.json', JSON.stringify({ version: 1, lifeVersion: this.lifeVersion, authMode: this.view.authMode, settings: this.view.settings, directionSettings: this.view.directionSettings, questSettings: this.view.questSettings, preparation: this.view.preparation, artifactHash: this.artifactHash }, null, 2))
     this.publish()
   }
   private serial<T>(action: () => Promise<T>): Promise<T> {
@@ -161,7 +163,7 @@ export class BackendEngine {
         this.life = null; this.lastLifeStage = undefined; this.view.error = null; delete this.view.simulation
         this.memoryVersion = saved.memoryVersion
         this.lifecycleVersion = saved.lifecycleVersion; this.economyVersion = saved.economyVersion; this.economySeed = saved.economySeed; this.view.compilation = saved.compilation; this.production = saved.production
-        this.view.authMode = saved.authMode; this.view.settings = saved.settings; this.view.preparation = saved.preparation; this.artifactHash = saved.artifactHash
+        this.view.authMode = saved.authMode; this.view.settings = saved.settings; this.view.directionSettings = saved.directionSettings ?? defaultDirectionSettings(); this.view.questSettings = saved.questSettings ?? defaultQuestSettings(); this.view.preparation = saved.preparation; this.artifactHash = saved.artifactHash
         this.view.preparation.busy = false; this.view.preparation.paused = !['idle', 'ready'].includes(saved.preparation.phase)
         this.workspace = new Workspace(root, this.world, () => this.publish(), true)
         await this.workspace.initialize()
@@ -174,7 +176,7 @@ export class BackendEngine {
       this.world = world
       this.lifeVersion = saved.lifeVersion
       this.memoryVersion = undefined; this.lifecycleVersion = undefined; this.economyVersion = undefined; this.economySeed = undefined; delete this.view.compilation; this.production = undefined
-      this.view.authMode = saved.authMode; this.view.settings = saved.settings; this.view.preparation = saved.preparation; this.artifactHash = saved.artifactHash
+      this.view.authMode = saved.authMode; this.view.settings = saved.settings; this.view.directionSettings = saved.directionSettings ?? defaultDirectionSettings(); this.view.questSettings = saved.questSettings ?? defaultQuestSettings(); this.view.preparation = saved.preparation; this.artifactHash = saved.artifactHash
       this.view.preparation.busy = false
       this.view.preparation.paused = saved.preparation.phase !== 'idle' && saved.preparation.phase !== 'ready'
       this.workspace = new Workspace(root, world, () => this.publish())
@@ -204,6 +206,8 @@ export class BackendEngine {
     this.economySeed = undefined
     this.productionTurns.clear()
     this.producer = null; this.production = undefined; this.compilerTask = null; delete this.view.compilation
+    this.view.directionSettings = defaultDirectionSettings()
+    this.view.questSettings = defaultQuestSettings()
     this.view.preparation = emptyPreparation(); this.artifactHash = null; this.view.error = null
     const root = path.join(this.base, runId)
     if (this.persistenceFactory) { this.persistence = this.coordinator(root); await this.persistence.initialize() }
@@ -260,6 +264,68 @@ export class BackendEngine {
           if (this.view.preparation.phase !== 'idle' || this.view.preparation.sessions.length) throw new Error('準備開始後の役割別設定は変更できません。新しい実行で指定してください')
           this.view.settings = validateSettings(command.settings, this.view.models)
           await this.ensureParent()
+          break
+        }
+        case 'directionSettings': {
+          this.ensureIdle()
+          const current = this.view.directionSettings ?? defaultDirectionSettings()
+          if (command.expectedRevision !== current.revision) throw new Error(`演出設定revisionが競合しました: expected=${command.expectedRevision}, actual=${current.revision}`)
+          this.view.directionSettings = directionSettingsSchema.parse({ ...command.settings, revision: current.revision + 1 })
+          break
+        }
+        case 'questSettings': {
+          this.ensureIdle()
+          const current = this.view.questSettings ?? defaultQuestSettings()
+          if (command.expectedRevision !== current.revision) throw new Error(`クエスト設定revisionが競合しました: expected=${command.expectedRevision}, actual=${current.revision}`)
+          const requested = questSettingsSchema.parse({ ...command.settings, revision: current.revision + 1 })
+          const stages = new Map(current.quests.map(quest => [quest.id, quest.stage]))
+          const next = { ...requested, processedGameEventIds: current.processedGameEventIds, completionEvents: current.completionEvents, quests: requested.quests.map(quest => ({ ...quest, stage: stages.get(quest.id) ?? 'before_acceptance' as const })) }
+          const knownNpcs = new Set(this.people().map(npc => npc.id)), knownLocations = new Set(this.view.preparation.draft?.map.locations.map(location => location.id) ?? [])
+          for (const quest of next.quests) {
+            if (knownNpcs.size && !knownNpcs.has(quest.targetNpcId)) throw new Error(`クエスト対象NPCが存在しません: ${quest.targetNpcId}`)
+            for (const directive of Object.values(quest.directives)) if (directive.locationLock.enabled && !knownLocations.has(directive.locationLock.locationId!)) throw new Error(`クエストの固定場所が存在しません: ${directive.locationLock.locationId}`)
+          }
+          for (const npcId of new Set(next.quests.map(quest => quest.targetNpcId))) activeQuestDirective(next, npcId)
+          const oldDirectives = new Map(current.quests.flatMap(quest => Object.values(quest.directives).map(directive => [directive.id, JSON.stringify(directive)] as const)))
+          const nextDirectives = new Map(next.quests.flatMap(quest => Object.values(quest.directives).map(directive => [directive.id, JSON.stringify(directive)] as const)))
+          const changedDirectiveIds = [...oldDirectives].filter(([id, value]) => nextDirectives.get(id) !== value).map(([id]) => id)
+          this.view.questSettings = next
+          await this.life?.cancelQuestDirectives(changedDirectiveIds)
+          await this.life?.synchronizeQuestDirectives(next.quests.flatMap(quest => Object.values(quest.directives).map(directive => directive.id)))
+          break
+        }
+        case 'questEvent': {
+          const existing = this.view.questSettings ?? defaultQuestSettings()
+          if (existing.processedGameEventIds.includes(command.eventId)) { this.view.questEventResult = { eventId: command.eventId, questId: command.questId, status: 'duplicate' }; break }
+          const current = structuredClone(existing)
+          const quest = current.quests.find(value => value.id === command.questId)
+          if (command.action === 'consume_completion') {
+            const completion = current.completionEvents.find(event => event.questId === command.questId && event.speechEventId === command.speechEventId)
+            if (!completion) throw new Error(`未消費のクエスト完了イベントが存在しません: ${command.questId}/${command.speechEventId}`)
+            current.completionEvents = current.completionEvents.filter(event => event !== completion)
+            this.view.questEventResult = { eventId: command.eventId, questId: command.questId, status: 'completion_consumed', directiveId: completion.directiveId, speechEventId: completion.speechEventId }
+          } else if (command.action === 'set_stage') {
+            if (!quest) throw new Error(`クエストが存在しません: ${command.questId}`)
+            await this.life?.cancelQuestDirectives(Object.values(quest.directives).map(directive => directive.id))
+            quest.stage = command.stage!
+            this.view.questEventResult = { eventId: command.eventId, questId: command.questId, status: 'stage_changed', directiveId: quest.directives[quest.stage].id }
+          } else if (!quest) {
+            throw new Error(`クエストが存在しません: ${command.questId}`)
+          }
+          this.view.questSettings = current
+          try {
+          if (quest && this.life && (command.action === 'trigger' || (command.action === 'set_stage' && quest.directives[quest.stage].trigger === 'stage_enter'))) {
+              const trigger = command.action === 'trigger' ? command.trigger! : 'stage_enter'
+              const result = await this.life.triggerQuestDirective(quest.targetNpcId, trigger, command.eventId, quest.id)
+              this.view.questEventResult = { eventId: command.eventId, questId: command.questId, status: result.status, ...(result.directiveId ? { directiveId: result.directiveId } : {}), ...(result.locationId ? { locationId: result.locationId } : {}), ...(result.deadlineTurn !== undefined ? { deadlineTurn: result.deadlineTurn } : {}), ...(result.eventId ? { speechEventId: result.eventId } : {}), ...(result.completionEvent ? { completionEvent: result.completionEvent } : {}) }
+            }
+          } catch (error) {
+            this.view.questSettings = existing
+            throw error
+          }
+          if (command.action === 'trigger' && !this.life) this.view.questEventResult = { eventId: command.eventId, questId: command.questId, status: 'ignored' }
+          current.processedGameEventIds = [...current.processedGameEventIds.slice(-9998), command.eventId]
+          current.revision++
           break
         }
         case 'answers': {
@@ -319,7 +385,7 @@ export class BackendEngine {
   }
 
   private npcInstructions(npc: NpcInitialization, spec: import('../core/contracts').Specification, memory = false, lifecycle = false, community = true, construction = true): string {
-    const instructions = this.dev?.prompts.npc === undefined ? this.prompts.npc(npc, spec, memory, lifecycle, community, construction) : this.dev.prompts.npc.replace(/\{\{(townName|birthModelId)\}\}/g, (_, key: string) => key === 'townName' ? spec.town.name : npc.birthModelId)
+    const instructions = this.dev?.prompts.npc === undefined ? this.prompts.npc(npc, spec, memory, lifecycle, community, construction) : this.dev.prompts.npc.replace(/\{\{(townName|birthModelId)\}\}/g, (_, key: string) => key === 'townName' ? spec.town.name : npc.birthModelId) + directionPromptBlock(npc.resolvedDialogueSettings)
     const binding = this.view.preparation.sessions.find(s => s.agentId === npc.id)
     return (binding ? binding.economyVersion : this.economyVersion) ? instructions + ECONOMY_NPC_PROMPT : instructions
   }
@@ -613,12 +679,18 @@ export class BackendEngine {
     const input = await this.productionService().generate('birth', birth.id,
       `新生児の初期情報を一人だけ生成してください。id=${id}、age=0、householdId=${homeParent.householdId}、locationId=${residential.locationId}、occupation=null。familyには指定された両親へのparent参照だけを含めてください。先天的気質以外の経験や価値観を遺伝させないでください。\n${this.modelSettingsPrompt()}\nJSON Schema:\n${JSON.stringify(z.toJSONSchema(identitySchema))}`,
       { birth, parents, turn, town: specification.town.setting })
-    const npc = identitySchema.parse(input)
+    const generated = identitySchema.parse(input)
+    const areaId = this.view.preparation.draft!.map.locations.find(location => location.id === generated.locationId)?.areaId ?? null
+    const direction = this.view.directionSettings
+    const npc: NpcInitialization = direction ? { ...generated,
+      resolvedDialogueSettings: resolveNpcDialogueSettings(direction, generated.id, areaId),
+      dialogueSettingsResolution: { directionRevision: direction.revision, regionId: areaId }
+    } : generated
     if (npc.id !== id || npc.age !== 0 || npc.occupation !== null || npc.householdId !== homeParent.householdId || npc.locationId !== residential.locationId || npc.family.length !== 2 || !birth.parents.every(id => npc.family.some(f => f.npcId === id && f.relation === 'parent')) || !['男性', '女性', 'その他', 'male', 'female', 'other'].includes(npc.sex)) throw new Error(`新生児の初期条件が指定と一致しません: ${birth.id}`)
     const settings = this.settings(), allowed = settings.npc.model.mode === 'auto' ? autoModels(this.view.models).map(m => m.model) : [settings.npc.model.modelId]
     if (!allowed.includes(npc.birthModelId)) throw new Error(`新生児のモデルが候補外です: ${npc.birthModelId}`)
     if (birth.parents.some(id => this.life!.isDead(id))) return npc
-    const effort = resolveEffort(requireModel(this.view.models, npc.birthModelId), settings.npc.effort, 0)
+    const effort = resolveEffort(requireModel(this.view.models, npc.birthModelId), settings.npc.effort, npc.resolvedDialogueSettings?.tier ?? 3)
     await this.workspace.write(`agents/${id}/character.json`, JSON.stringify(npc, null, 2))
     await this.createBinding({ agentId: id, sessionId: id, role: 'npc', modelId: npc.birthModelId, effort: effort.effective, cwd: path.join(this.workspace.root, `agents/${id}`), threadId: null, creation: 'requested', seedPersisted: false }, this.npcInstructions(npc, specification, true, true), JSON.stringify({ initialConditions: npc, turn, instruction: '出生時の初期位置設定の通知を待ってください。' }))
     return npc
@@ -771,7 +843,7 @@ NPCのモデルAutoとeffort Autoは独立しています。effortはsettings.np
   private async reviewPopulation(text: string, requireChoice = false): Promise<boolean> {
     const p = this.view.preparation
     const draft = await this.lockedDraft()
-    const result = inspectPopulation(JSON.parse(text), draft.specification, draft.map, this.settings(), this.view.models)
+    const result = inspectPopulation(JSON.parse(text), draft.specification, draft.map, this.settings(), this.view.models, this.view.directionSettings)
     if (!result.issues.length && !requireChoice) return false
     const previousError = p.error
     p.designReview = { id: newId(), sourceHash: digest(text), specificationHash: p.lock!.hash, population: result.population, issues: result.issues, decision: 'pending', decidedAt: null, instruction: '' }
@@ -793,7 +865,7 @@ NPCのモデルAutoとeffort Autoは独立しています。effortはsettings.np
       await this.reviewPopulation(text, true)
       return
     }
-    const checked = inspectPopulation(JSON.parse(text), draft.specification, draft.map, this.settings(), this.view.models)
+    const checked = inspectPopulation(JSON.parse(text), draft.specification, draft.map, this.settings(), this.view.models, this.view.directionSettings)
     if (JSON.stringify(checked.population) !== JSON.stringify(review.population) || JSON.stringify(checked.issues) !== JSON.stringify(review.issues)) throw new Error('設計差異の検証結果が変わっています')
     const previousError = p.error
     p.error = null; this.view.error = null
@@ -852,7 +924,7 @@ NPCのモデルAutoとeffort Autoは独立しています。effortはsettings.np
     for (const npc of p.population.npcs) {
       if (this.stopRequested) { p.paused = true; p.busy = false; await this.persist(); return }
       if (p.sessions.some(s => s.agentId === npc.id)) continue
-      const effort = resolveEffort(requireModel(this.view.models, npc.birthModelId), settings.npc.effort, npc.age)
+      const effort = resolveEffort(requireModel(this.view.models, npc.birthModelId), settings.npc.effort, npc.resolvedDialogueSettings?.tier ?? 3)
       await this.workspace.write(`agents/${npc.id}/character.json`, JSON.stringify(npc, null, 2))
       await this.workspace.write(`agents/${npc.id}/memory.md`, `# ${npc.name}\n\n初期化時点です。まだシミュレーション上の経験はありません。\n`)
       await this.createBinding({ agentId: npc.id, sessionId: npc.id, role: 'npc', modelId: npc.birthModelId, effort: effort.effective, cwd: path.join(this.workspace.root, `agents/${npc.id}`), threadId: null, creation: 'requested', seedPersisted: false }, this.npcInstructions(npc, draft.specification, this.memoryVersion === 1, this.lifecycleVersion === 1), JSON.stringify({ initialConditions: npc, town: draft.specification.town.setting, turn: 0, effectiveEffort: effort }))
@@ -896,7 +968,7 @@ NPCのモデルAutoとeffort Autoは独立しています。effortはsettings.np
         if (!npc || !p.draft) throw new Error(`NPCの再接続に必要な初期情報と仕様がありません: ${binding.agentId}`)
         instructions = this.npcInstructions(npc, p.draft.specification, binding.memoryVersion === 1, binding.lifecycleVersion === 1, !!binding.communityToolsVersion, binding.communityToolsVersion === 2)
       }
-      if (npc && binding.role === 'npc') binding.effort = resolveEffort(requireModel(this.view.models, binding.modelId), this.settings().npc.effort, npc.age).effective
+      if (npc && binding.role === 'npc') binding.effort = resolveEffort(requireModel(this.view.models, binding.modelId), this.settings().npc.effort, npc.resolvedDialogueSettings?.tier ?? 3).effective
       await this.runtime.resume(binding, instructions)
       if (npc && binding.role === 'npc') this.runtime.setThreadPolicy?.(binding, this.life?.snapshot().stage === 'ended')
       binding.creation = 'initialized'
@@ -920,11 +992,11 @@ NPCのモデルAutoとeffort Autoは独立しています。effortはsettings.np
       if (value.role === 'npc') {
         const npc = this.people().find(n => n.id === agentId)
         if (!npc || npc.birthModelId !== value.modelId) throw new Error(`NPCの先天的モデルが変更されています: ${agentId}`)
-        return { ...value, effort: resolveEffort(model, this.settings().npc.effort, npc.age).effective }
+        return { ...value, effort: resolveEffort(model, this.settings().npc.effort, npc.resolvedDialogueSettings?.tier ?? 3).effective }
       }
       const fixed = this.settings().facility
       if (value.modelId !== fixed.modelId) throw new Error(`施設モデルが変更されています: ${agentId}`)
-      return { ...value, effort: resolveEffort(model, { mode: 'fixed', effort: fixed.effort }, 18).effective }
+      return { ...value, effort: resolveEffort(model, { mode: 'fixed', effort: fixed.effort }, 3).effective }
     }
     if (this.economyVersion && !this.economySeed) throw new Error('経済対応ワールドの初期経済がありません')
     if (p.sessions.some(s => s.economyVersion !== this.economyVersion)) throw new Error('保存済みSessionと経済versionが一致しません')
@@ -937,6 +1009,27 @@ NPCのモデルAutoとeffort Autoは独立しています。effortはsettings.np
         if (npc.memoryVersion !== 1 || !this.runtime.matchMemories) throw new Error(`記憶照合に対応していないConversationです: ${id}`)
         return this.runtime.matchMemories({ instructions: this.dev?.prompts.memoryMatcher, agentId: id, modelId: npc.modelId, effort: npc.effort, cwd: npc.cwd, cue, memories: records.map(record => ({ id: record.id, text: `${record.text}\n本人にとっての意味: ${record.meaning}`, ...record.cues })) }, signal, progress)
       } } } : {}),
+      dialogueOverrides: ({ actorId }) => {
+        void actorId
+        return undefined
+      },
+      questDirective: ({ actorId, trigger, directiveId, questId }) => {
+        if (questId) {
+          const exact = this.view.questSettings?.quests.find(value => value.id === questId && value.targetNpcId === actorId)
+          return exact && exact.directives[exact.stage].enabled && exact.directives[exact.stage].trigger === trigger ? { questId: exact.id, questName: exact.name, stage: exact.stage, directive: exact.directives[exact.stage] } : undefined
+        }
+        if (!directiveId) return activeQuestDirective(this.view.questSettings, actorId, trigger)
+        const quest = this.view.questSettings?.quests.find(value => value.targetNpcId === actorId && value.directives[value.stage].id === directiveId)
+        return quest ? { questId: quest.id, questName: quest.name, stage: quest.stage, directive: quest.directives[quest.stage] } : undefined
+      },
+      questCompleted: value => {
+        const settings = this.view.questSettings ?? defaultQuestSettings()
+        if (!settings.completionEvents.some(event => event.directiveId === value.directiveId && event.speechEventId === value.speechEventId)) settings.completionEvents = [...settings.completionEvents.slice(-998), value]
+      },
+      questExpired: value => {
+        this.view.questEventResult = { eventId: value.activationEventId, questId: value.questId, status: 'expired', directiveId: value.directiveId }
+        this.publish()
+      },
       start: async (id, text, clientId) => {
         if (!p.sessions.some(s => s.agentId === id) && !await this.initializeBuiltFacility(id)) return null
         const simulation = this.life!.snapshot()
@@ -966,7 +1059,7 @@ NPCのモデルAutoとeffort Autoは独立しています。effortはsettings.np
           this.view.simulation = value
           if (value.lifecycle && this.view.connection === 'connected' && this.view.authenticated) for (const binding of p.sessions.filter(s => s.role === 'npc' && s.threadId)) {
             const npc = value.lifecycle.residents.find(n => n.id === binding.agentId)
-            if (npc) this.runtime.setThreadPolicy?.({ ...binding, effort: resolveEffort(requireModel(this.view.models, binding.modelId), this.settings().npc.effort, npc.age).effective }, npc.diedTurn !== null || value.stage === 'ended')
+            if (npc) this.runtime.setThreadPolicy?.({ ...binding, effort: resolveEffort(requireModel(this.view.models, binding.modelId), this.settings().npc.effort, npc.resolvedDialogueSettings?.tier ?? 3).effective }, npc.diedTurn !== null || value.stage === 'ended')
           }
           if (value.stage === 'ready') { p.phase = 'ready'; p.busy = false; p.error = null; p.paused = false; p.operation = null }
           else if (value.stage === 'initializing') { p.busy = true; p.paused = false }
@@ -1086,7 +1179,7 @@ NPCのモデルAutoとeffort Autoは独立しています。effortはsettings.np
       const draft = await this.lockedDraft()
       if (await this.reviewPopulation(text)) return
       delete p.designReview
-      p.population = validatePopulation(input, draft.specification, draft.map, this.settings(), this.view.models)
+      p.population = validatePopulation(input, draft.specification, draft.map, this.settings(), this.view.models, undefined, undefined, this.view.directionSettings)
       this.artifactHash = hash
       await this.workspace.write('population.json', JSON.stringify(p.population, null, 2))
       await this.persist(); await this.initializePopulation()

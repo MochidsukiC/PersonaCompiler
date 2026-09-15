@@ -45,7 +45,7 @@ it('initializes household homes and runs a day using authenticated real models',
     const model = requireModel(await runtime.models(), 'gpt-5.6-luna')
     for (const npc of people.npcs) {
       const cwd = path.join(root, npc.id); await mkdir(cwd)
-      const b: SessionBinding = { agentId: npc.id, sessionId: npc.id, role: 'npc', cwd, modelId: npc.birthModelId, effort: resolveEffort(model, { mode: 'auto' }, npc.age).effective, threadId: null, creation: 'requested', seedPersisted: false, lifeToolsVersion: 1 }
+      const b: SessionBinding = { agentId: npc.id, sessionId: npc.id, role: 'npc', cwd, modelId: npc.birthModelId, effort: resolveEffort(model, { mode: 'auto' }, npc.resolvedDialogueSettings?.tier ?? 3).effective, threadId: null, creation: 'requested', seedPersisted: false, lifeToolsVersion: 1 }
       bindings.push(b)
       b.threadId = await runtime.create(b, prompts.npc(npc, specification), { tools: lifeTools('npc'), disableEnvironment: true })
       await runtime.seed(b, `${JSON.stringify(npc)}\nユーザーからの誘導: 今日は町で一日暮らしてみてください。家を出る、設備を利用する、挨拶する、夜に休むことも考えつつ、自分で行動を選んでください。会話は簡潔に、自分の用事が終われば次の時間帯へ進みます。`)

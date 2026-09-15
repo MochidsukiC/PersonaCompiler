@@ -15,6 +15,8 @@ import { addCompany, applyEconomyTool, assertCanMoveCarried, economyInventory, e
 
 import { lifecycleToolSchemas, identitySchema, type Birth, type Resident } from './lifecycle-contracts'
 import { initializeLifecycle, ageDay, endReason, marry, living, resident } from './lifecycle'
+import { COMPATIBLE_DIALOGUE_SETTINGS, dialogueRequestOverridesSchema, resolvedDialogueSettingsSchema, resolveDialogueRequest, type DialogueRequestOverrides } from './direction-settings'
+import type { QuestDirective, QuestStage, QuestTrigger } from './quest-settings'
 
 const jobSchema = z.object({
   batchId: z.string().optional(),
@@ -26,6 +28,23 @@ const resultSchema = z.object({ success: z.boolean(), contentItems: z.array(z.ob
 export const lifeCheckpointSchema = z.object({
   economyArchive: z.array(economyRecordSchema).optional(),
   cognition: memorySnapshotSchema.optional(), memoryArchive: z.array(memoryArchiveSchema).optional(),
+  actorDirectionSettings: z.record(z.string(), z.object({
+    settings: resolvedDialogueSettingsSchema, regionId: z.string().nullable(), directionRevision: z.number().int().nonnegative(), lockedAtTurn: z.number().int().nonnegative()
+  }).strict()).optional(),
+  dialogueDirectionAudit: z.array(z.object({
+    eventId: z.number().int().positive(), actorId: z.string(), turn: z.number().int().nonnegative(),
+    base: resolvedDialogueSettingsSchema, effective: resolvedDialogueSettingsSchema,
+    questOverrideApplied: z.boolean(), utteranceOverrideApplied: z.boolean(), directiveId: z.string().optional(), sourceTextChanged: z.boolean().optional()
+  }).strict()).optional(),
+  questDirectiveReceipts: z.record(z.string(), z.object({ turn: z.number().int().nonnegative(), eventId: z.number().int().positive() }).strict()).optional(),
+  questDirectiveAttempts: z.record(z.string(), z.object({ failures: z.number().int().nonnegative(), turn: z.number().int().nonnegative() }).strict()).optional(),
+  pendingQuestLocations: z.record(z.string(), z.object({ actorId: z.string().default(''), activationEventId: z.string().default('legacy'), requestedTurn: z.number().int().nonnegative(), deadlineTurn: z.number().int().nonnegative(), locationId: z.string() }).strict()).optional(),
+  activeQuestDirectiveIds: z.array(z.string()).optional(),
+  questDirectiveActivationIds: z.record(z.string(), z.string()).optional(),
+  schedulerAudit: z.array(z.object({
+    actorId: z.string(), turn: z.number().int().nonnegative(), tier: z.union([z.literal(0), z.literal(1), z.literal(2), z.literal(3)]),
+    mode: z.enum(['aggregate', 'event_only', 'phase', 'detailed']), reason: z.string()
+  }).strict()).optional(),
   world: simulationSchema, jobs: z.array(jobSchema),
   active: z.record(z.string(), z.object({ turnId: z.string().nullable(), kind: z.enum(['normal', 'compact']), compactSeen: z.boolean() })),
   interactions: z.array(z.object({ id: z.string(), npcId: z.string(), facilityId: z.string(), request: z.string(), done: z.boolean() })),
@@ -53,17 +72,24 @@ export interface LifeServices {
     runId: string
     match(agentId: string, cue: string, records: MemoryRecord[], signal: AbortSignal, progress: (value: { threadId: string; turnId: string | null }) => Promise<void>): Promise<string[]>
   }
+  dialogueOverrides?: (context: { actorId: string; locationId: string; turn: number; text: string | null }) => DialogueRequestOverrides | undefined
+  questDirective?: (context: { actorId: string; locationId: string; turn: number; trigger?: QuestTrigger; directiveId?: string; questId?: string }) => { questId: string; questName: string; stage: QuestStage; directive: QuestDirective } | undefined
+  questCompleted?: (event: { questId: string; directiveId: string; activationEventId: string; stage: QuestStage; turn: number; speechEventId: number; text: string; deliveryMode: 'fixed' | 'semi_fixed' | 'free'; fallbackUsed: boolean }) => void
+  questExpired?: (event: { questId: string; directiveId: string; activationEventId: string; turn: number }) => void
   changed(value: SimulationSnapshot): void
   failed(error: Error): void
 }
 const reply = (value: unknown, success = true): ToolResult => ({ success, contentItems: [{ type: 'inputText', text: JSON.stringify(value) }] })
 const unique = () => crypto.randomUUID()
+const normalizedText = (value: string) => value.normalize('NFKC').toLocaleLowerCase().replace(/\s+/g, '')
+const containsText = (text: string, term: string) => normalizedText(text).includes(normalizedText(term))
 
 export class LifeHarness {
   private data: LifeCheckpoint
   private queue: Promise<unknown> = Promise.resolve()
   private scheduled = false
   private lastYield = performance.now()
+  private operationsSinceYield = 0
   private closed = false
   private stopTask: Promise<void> | null = null
   private readonly pending = new Set<Promise<unknown>>()
@@ -118,7 +144,11 @@ export class LifeHarness {
       this.data = {
         world: { ...(services.lifecycle ? { lifecycle: initializeLifecycle(population, services.lifecycle.seed) } : {}), version: 1, revision: 0, stage: 'initializing', phase: 'facilities', turn: 0, day: 1, time: 'morning', step: false, facilities,
           actors: population.npcs.map(n => ({ id: n.id, name: n.name, householdId: n.householdId, locationId: n.locationId, position: null, activity: 'entering', nextFacilityId: null, wakeAt: null, compact: 'none' })), events: [], error: null },
-        jobs: [], active: {}, interactions: [], receipts: {}, terminalInputs: {}, terminalWrites: {}
+        jobs: [], active: {}, interactions: [], receipts: {}, terminalInputs: {}, terminalWrites: {},
+        ...(() => {
+          const rows = Object.fromEntries(population.npcs.flatMap(npc => npc.resolvedDialogueSettings ? [[npc.id, { settings: npc.resolvedDialogueSettings, regionId: npc.dialogueSettingsResolution?.regionId ?? null, directionRevision: npc.dialogueSettingsResolution?.directionRevision ?? 0, lockedAtTurn: 0 }]] : []))
+          return Object.keys(rows).length ? { actorDirectionSettings: rows, dialogueDirectionAudit: [] } : {}
+        })()
       }
     }
     if (services.memory) {
@@ -157,6 +187,67 @@ export class LifeHarness {
   memoryInspection(id: string) { if (!this.cognition) throw new LifeRuleError('このワールドは記憶機能の対象外です'); return this.cognition.inspect(id) }
   memoryDetail(id: string, memoryId: string, revision: number) { if (!this.cognition) throw new LifeRuleError('このワールドは記憶機能の対象外です'); return this.cognition.detail(id, memoryId, revision) }
   memoryRelations() { return this.cognition ? this.people().flatMap(n => this.cognition!.owner(n.id).relations) : null }
+  async triggerQuestDirective(actorId: string, trigger: QuestTrigger, activationEventId: string = unique(), questId?: string): Promise<{ status: 'ignored' | 'already_active' | 'pending_location' | 'spoken' | 'queued'; eventId?: number; directiveId?: string; locationId?: string; deadlineTurn?: number; completionEvent?: { questId: string; directiveId: string; activationEventId: string; stage: QuestStage; turn: number; speechEventId: number; text: string; deliveryMode: 'fixed' | 'semi_fixed' | 'free'; fallbackUsed: boolean } }> {
+    return this.update(d => {
+      const actor = this.actor(d, actorId)
+      const active = this.services.questDirective?.({ actorId, locationId: actor.locationId, turn: d.world.turn, trigger, questId })
+      if (!active || (active.directive.once && d.questDirectiveReceipts?.[active.directive.id])) return { status: 'ignored' }
+      const existingActivation = d.questDirectiveActivationIds?.[active.directive.id]
+      if (existingActivation) {
+        const pending = d.pendingQuestLocations?.[active.directive.id]
+        if (!pending) return { status: 'already_active', directiveId: active.directive.id }
+        if (active.directive.locationLock.enabled && actor.locationId !== pending.locationId) return { status: 'pending_location', directiveId: active.directive.id, locationId: pending.locationId, deadlineTurn: pending.deadlineTurn }
+        delete d.pendingQuestLocations![active.directive.id]
+      }
+      d.activeQuestDirectiveIds ??= []
+      if (!d.activeQuestDirectiveIds.includes(active.directive.id)) d.activeQuestDirectiveIds.push(active.directive.id)
+      d.questDirectiveActivationIds ??= {}
+      d.questDirectiveActivationIds[active.directive.id] ??= activationEventId
+      if (active.directive.locationLock.enabled && actor.locationId !== active.directive.locationLock.locationId) {
+        d.pendingQuestLocations ??= {}
+        const pending = d.pendingQuestLocations[active.directive.id] ?? { actorId, activationEventId: d.questDirectiveActivationIds[active.directive.id], requestedTurn: d.world.turn, deadlineTurn: d.world.turn + active.directive.locationLock.maxWaitTurns, locationId: active.directive.locationLock.locationId! }
+        d.pendingQuestLocations[active.directive.id] = pending
+        if (!d.jobs.some(job => job.agentId === actorId && ['queued', 'deferred', 'requested', 'running'].includes(job.status) && job.text.includes(`directiveId=${active.directive.id}`))) this.enqueue(d, actorId, 'user', `クエスト発話の場所条件を満たしていません。自動転送はせず、通常の生活ToolでlocationId=${pending.locationId}へ向かってください。期限はturn=${pending.deadlineTurn}です。directiveId=${active.directive.id}`)
+        return { status: 'pending_location', directiveId: active.directive.id, locationId: pending.locationId, deadlineTurn: pending.deadlineTurn }
+      }
+      if (active.directive.mode !== 'fixed') {
+        this.enqueue(d, actorId, 'user', `ゲーム側からクエスト発話が発火しました。questDirectiveに従い、sendMessageへquestActivationEventId=${d.questDirectiveActivationIds[active.directive.id]}を付けて応答してください。trigger=${trigger} directiveId=${active.directive.id}`)
+        return { status: 'queued', directiveId: active.directive.id }
+      }
+      const facility = this.facility(d, actor.locationId)
+      const recipients = speechRecipients(facility, actor, d.world.actors, 'medium')
+      const event = this.event(d, actor, 'speech', active.directive.fixedText, recipients)
+      d.world.events[d.world.events.length - 1] = { ...event, volume: 'medium' }
+      d.questDirectiveReceipts ??= {}
+      d.questDirectiveReceipts[active.directive.id] = { turn: d.world.turn, eventId: event.sequence }
+      d.activeQuestDirectiveIds = d.activeQuestDirectiveIds.filter(id => id !== active.directive.id)
+      const completionEvent = { questId: active.questId, directiveId: active.directive.id, activationEventId: d.questDirectiveActivationIds[active.directive.id], stage: active.stage, turn: d.world.turn, speechEventId: event.sequence, text: active.directive.fixedText, deliveryMode: 'fixed' as const, fallbackUsed: false }
+      delete d.questDirectiveActivationIds[active.directive.id]; delete d.pendingQuestLocations?.[active.directive.id]
+      this.services.questCompleted?.(completionEvent)
+      for (const id of recipients) this.enqueue(d, id, 'message', JSON.stringify({ kind: 'heardSpeech', eventId: event.sequence, turn: d.world.turn, speaker: { id: actor.id, name: actor.name, position: actor.position }, volume: 'medium', text: active.directive.fixedText }))
+      return { status: 'spoken', eventId: event.sequence, directiveId: active.directive.id, completionEvent }
+    })
+  }
+  async synchronizeQuestDirectives(validDirectiveIds: string[]): Promise<void> {
+    const valid = new Set(validDirectiveIds)
+    await this.update(d => {
+      d.activeQuestDirectiveIds = d.activeQuestDirectiveIds?.filter(id => valid.has(id))
+      for (const id of Object.keys(d.questDirectiveActivationIds ?? {})) if (!valid.has(id)) delete d.questDirectiveActivationIds![id]
+      for (const id of Object.keys(d.pendingQuestLocations ?? {})) if (!valid.has(id)) delete d.pendingQuestLocations![id]
+    })
+  }
+  async cancelQuestDirectives(directiveIds: string[]): Promise<void> {
+    const cancelled = new Set(directiveIds)
+    await this.update(d => {
+      for (const id of cancelled) {
+        const activationId = d.questDirectiveActivationIds?.[id]
+        if (activationId) delete d.questDirectiveAttempts?.[activationId]
+        delete d.questDirectiveActivationIds?.[id]; delete d.pendingQuestLocations?.[id]
+      }
+      d.activeQuestDirectiveIds = d.activeQuestDirectiveIds?.filter(id => !cancelled.has(id))
+      for (const job of d.jobs) if (['queued', 'deferred'].includes(job.status) && directiveIds.some(id => job.text.includes(`directiveId=${id}`))) job.status = 'discarded'
+    })
+  }
   private actor(d: LifeCheckpoint, id: string): LifeActor {
     const actor = d.world.actors.find(a => a.id === id)
     if (!actor) throw new LifeRuleError(`NPCが見つかりません: ${id}`)
@@ -169,7 +260,8 @@ export class LifeHarness {
   }
   private update<T>(work: (draft: LifeCheckpoint) => T): Promise<T> {
     const task = this.queue.then(async () => {
-      if (performance.now() - this.lastYield >= 8) { await yieldToEventLoop(); this.lastYield = performance.now() }
+      this.operationsSinceYield++
+      if (this.operationsSinceYield >= 32 || performance.now() - this.lastYield >= 8) { await yieldToEventLoop(); this.lastYield = performance.now(); this.operationsSinceYield = 0 }
       this.memoryChanges = []
       this.economyChanges = []
       const transaction = this.services.memory ? lifeTransaction(this.data) : null
@@ -244,6 +336,15 @@ export class LifeHarness {
     d.jobs.push(job)
     return job
   }
+  private simulationTier(d: LifeCheckpoint, actorId: string): 0 | 1 | 2 | 3 {
+    return d.actorDirectionSettings?.[actorId]?.settings.tier ?? COMPATIBLE_DIALOGUE_SETTINGS.tier
+  }
+  private recordSchedulerDecision(d: LifeCheckpoint, actorId: string, tier: 0 | 1 | 2 | 3, mode: 'aggregate' | 'event_only' | 'phase' | 'detailed', reason: string): void {
+    d.schedulerAudit ??= []
+    if (d.schedulerAudit.some(row => row.actorId === actorId && row.turn === d.world.turn)) return
+    d.schedulerAudit.push({ actorId, turn: d.world.turn, tier, mode, reason })
+    if (d.schedulerAudit.length > 1000) d.schedulerAudit.splice(0, d.schedulerAudit.length - 1000)
+  }
   private quiet(d: LifeCheckpoint): boolean {
     return !d.world.economy?.requests.some(r => ['queued', 'running', 'uncertain', 'failed'].includes(r.status)) && !d.world.lifecycle?.births.some(b => b.status === 'requested') && !this.recallTasks.size && !Object.keys(d.active).length && !Object.keys(d.terminalWrites).length && !d.jobs.some(j => ['queued', 'requested', 'running'].includes(j.status)) && !d.interactions.some(i => !i.done)
   }
@@ -251,9 +352,15 @@ export class LifeHarness {
     const actor = this.actor(d, id)
     const facility = this.facility(d, actor.locationId)
     const residential = d.world.facilities.find(f => f.type === 'residential')!
+    const baseDirection = d.actorDirectionSettings?.[id]?.settings
+    const requestOverrides = this.services.dialogueOverrides?.({ actorId: id, locationId: actor.locationId, turn: d.world.turn, text: null })
+    const dialoguePolicy = baseDirection || requestOverrides ? resolveDialogueRequest(baseDirection ?? COMPATIBLE_DIALOGUE_SETTINGS, requestOverrides) : undefined
+    const questDirective = this.activeDirective(d, actor)
     return { turn: d.world.turn, day: d.world.day, time: d.world.time, phase: d.world.phase, self: actor,
       ...(d.world.economy ? { economy: economySituation(d.world, id) } : {}),
       organizations: d.world.organizations ?? [],
+      ...(dialoguePolicy ? { dialoguePolicy } : {}),
+      ...(questDirective ? { questDirective: { questId: questDirective.questId, questName: questDirective.questName, stage: questDirective.stage, activationEventId: questDirective.activationEventId, directive: questDirective.directive } } : {}),
       facility, currentRegions: facility.layout?.regions.filter(region => actor.position && contains(region.bounds, actor.position)),
       ...(d.world.lifecycle ? { identity: resident(d.world.lifecycle, id), marriageProposals: d.world.lifecycle.proposals.filter(p => p.actorId === id || p.partnerId === id), homeRequests: d.world.lifecycle.homes.filter(h => h.sponsorId === id || h.members.includes(id)), birthPlans: d.world.lifecycle.births.filter(b => b.parents.includes(id)) } : {}),
       home: residential.layout?.homes.find(h => h.householdId === actor.householdId), homeLocationId: residential.locationId,
@@ -264,6 +371,13 @@ export class LifeHarness {
       destinations: d.world.facilities.filter(f => f.layout).map(f => ({ id: f.id, name: f.name, locationId: f.locationId })),
       construction: d.world.facilities.filter(f => f.construction).map(f => ({ id: f.id, name: f.name, locationId: f.locationId, ready: !!f.layout, ...f.construction })),
       ...(this.cognition ? { memorySources: this.cognition.availableSources(id), memoryProgress: this.cognition.progress(id) } : {}) }
+  }
+  private activeDirective(d: LifeCheckpoint, actor: LifeActor) {
+    for (const directiveId of d.activeQuestDirectiveIds ?? []) {
+      const active = this.services.questDirective?.({ actorId: actor.id, locationId: actor.locationId, turn: d.world.turn, directiveId })
+      if (active && !(active.directive.once && d.questDirectiveReceipts?.[active.directive.id])) return { ...active, activationEventId: d.questDirectiveActivationIds?.[active.directive.id] ?? 'legacy' }
+    }
+    return undefined
   }
   private endActivity(d: LifeCheckpoint, actor: LifeActor): void {
     actor.activity = 'ended'
@@ -352,6 +466,14 @@ export class LifeHarness {
     d.world.day = Math.floor((d.world.turn - 1) / 4) + 1
     d.world.time = (['morning', 'noon', 'evening', 'night'] as const)[(d.world.turn - 1) % 4]
     d.world.phase = 'entry'
+    for (const [directiveId, pending] of Object.entries(d.pendingQuestLocations ?? {})) if (d.world.turn > pending.deadlineTurn) {
+      const active = this.services.questDirective?.({ actorId: pending.actorId, locationId: pending.locationId, turn: d.world.turn, directiveId })
+      if (active) this.services.questExpired?.({ questId: active.questId, directiveId, activationEventId: pending.activationEventId, turn: d.world.turn })
+      delete d.pendingQuestLocations![directiveId]
+      d.activeQuestDirectiveIds = d.activeQuestDirectiveIds?.filter(id => id !== directiveId)
+      delete d.questDirectiveActivationIds?.[directiveId]
+      delete d.questDirectiveAttempts?.[pending.activationEventId]
+    }
     for (const actor of d.world.actors) {
       if (actor.activity === 'dead') continue
       if (actor.activity === 'sleeping') this.event(d, actor, 'wake', '起床しました')
@@ -504,6 +626,11 @@ export class LifeHarness {
       const actor: LifeActor = { id: child.id, name: child.name, householdId: child.householdId, locationId: child.locationId, position: null, activity: 'entering', nextFacilityId: null, wakeAt: null, compact: 'none' }
       d.world.actors.push(actor)
       if (d.world.economy) { d.world.economy.vitals[child.id] = initialVitals(); d.world.economy.accounts['npc:' + child.id] = { balance: 0, sales: 0, purchases: 0, wages: 0, exports: 0 } }
+      if (child.resolvedDialogueSettings) {
+        d.actorDirectionSettings ??= {}
+        d.actorDirectionSettings[child.id] = { settings: child.resolvedDialogueSettings, regionId: child.dialogueSettingsResolution?.regionId ?? null, directionRevision: child.dialogueSettingsResolution?.directionRevision ?? 0, lockedAtTurn: d.world.turn }
+        d.dialogueDirectionAudit ??= []
+      }
       if (this.cognition) this.memoryChanges.push(this.cognition.addOwner(child.id))
       request.status = 'complete'; request.childId = child.id
       this.enqueue(d, actor.id, 'position', `出生しました。現在turn=${d.world.turn}です。住宅街の家にsetInitialPositionで位置を選び、応答を終了してください。\n${JSON.stringify({ identity: child, facility: residential })}`)
@@ -587,9 +714,25 @@ export class LifeHarness {
       this.advance(d)
       if (!['initializing', 'running'].includes(d.world.stage)) return { actions, births: [], writes }
       if (d.world.phase === 'activity') for (const a of d.world.actors) {
+        const tier = this.simulationTier(d, a.id)
+        if (tier === 0) for (const job of d.jobs) {
+          if (job.agentId === a.id && job.status === 'queued' && ['message', 'reply', 'notice'].includes(job.kind)) job.status = 'discarded'
+        }
         const busy = d.active[a.id] || [...this.recallTasks.keys()].some(key => key.startsWith(`${a.id}:`)) || d.jobs.some(j => j.agentId === a.id && ['queued', 'requested', 'running'].includes(j.status))
         if (busy) continue
-        if (a.activity === 'active') this.enqueue(d, a.id, 'activity', `現在の状況から自分の行動を選んでください。発話・移動・施設利用はToolで行い、活動終了はendTurnまたはsleepで通知してください。推論の文章だけでは活動終了になりません。\n${JSON.stringify(this.situation(d, a.id))}`)
+        if (a.activity === 'active') {
+          if (tier === 0) {
+            this.recordSchedulerDecision(d, a.id, tier, 'aggregate', '個別推論を省略し、集団・統計更新として日常フェーズを処理')
+            this.endActivity(d, a)
+          } else if (tier === 1) {
+            this.recordSchedulerDecision(d, a.id, tier, 'event_only', '重要イベント・接触がないため日常をルール処理')
+            this.endActivity(d, a)
+          } else {
+            const detailed = tier === 3
+            this.recordSchedulerDecision(d, a.id, tier, detailed ? 'detailed' : 'phase', detailed ? '毎ターンの詳細な個別推論' : '生活フェーズごとの個別推論')
+            this.enqueue(d, a.id, 'activity', `${detailed ? 'このターンは詳細な個別推論の対象です。状況・関係・記憶を踏まえて' : 'この生活フェーズについて'}自分の行動を選んでください。発話・移動・施設利用はToolで行い、活動終了はendTurnまたはsleepで通知してください。推論の文章だけでは活動終了になりません。\n${JSON.stringify(this.situation(d, a.id))}`)
+          }
+        }
         if (a.activity === 'sleeping' && a.compact === 'pending') {
           if (this.cognition && this.cognition.owner(a.id).consolidation !== 'complete') {
             if (this.cognition.owner(a.id).consolidation !== 'pending') throw new LifeRuleError(`記憶整理の完了が不明です: ${a.id}`)
@@ -616,6 +759,11 @@ export class LifeHarness {
         if (recipient?.activity === 'ended' && ['message', 'reply', 'user'].includes(job.kind)) { job.status = 'deferred'; continue }
         if (active && (!active.turnId || active.kind === 'compact' || job.kind === 'compact')) continue
         if (active && requestedAgents.has(job.agentId)) continue
+        if (recipient && d.world.phase === 'activity') {
+          const tier = this.simulationTier(d, recipient.id)
+          if (tier === 1 && ['message', 'reply', 'notice', 'user'].includes(job.kind)) this.recordSchedulerDecision(d, recipient.id, tier, 'event_only', `${job.kind}による重要イベント・接触で個別推論`)
+          if (tier === 0 && job.kind === 'user') this.recordSchedulerDecision(d, recipient.id, tier, 'aggregate', 'プレイヤーからの直接入力を例外として個別推論')
+        }
         job.status = 'requested'
         requestedAgents.add(job.agentId)
         if (active) job.turnId = active.turnId
@@ -1100,10 +1248,56 @@ export class LifeHarness {
         return reply({ reserved: target.id, endTurn: true })
       }
       case 'sendMessage': {
-        const value = lifeToolSchemas.sendMessage.parse(input)
+        const requested = lifeToolSchemas.sendMessage.parse(input)
+        const activeDirective = this.activeDirective(d, actor)
+        if (requested.questActivationEventId && !activeDirective) return reply({ error: 'クエスト発話は取消済みまたは期限切れです。getSituationで状態を更新してください。', staleActivation: true }, false)
+        if (activeDirective && activeDirective.directive.mode !== 'fixed' && requested.questActivationEventId !== activeDirective.activationEventId) return reply({ error: `questActivationEventIdが現在の発火イベントと一致しません: required=${activeDirective.activationEventId}`, staleActivation: true }, false)
+        if (activeDirective?.directive.locationLock.enabled && actor.locationId !== activeDirective.directive.locationLock.locationId) {
+          d.pendingQuestLocations ??= {}
+          const pending = d.pendingQuestLocations[activeDirective.directive.id] ?? { actorId: actor.id, activationEventId: activeDirective.activationEventId, requestedTurn: d.world.turn, deadlineTurn: d.world.turn + activeDirective.directive.locationLock.maxWaitTurns, locationId: activeDirective.directive.locationLock.locationId! }
+          d.pendingQuestLocations[activeDirective.directive.id] = pending
+          return reply({ error: '指定場所への通常移動が必要です。自動転送は行いません。', pendingLocation: pending, expired: d.world.turn > pending.deadlineTurn }, false)
+        }
+        let text = requested.text
+        let fallbackUsed = false
+        if (activeDirective?.directive.mode === 'fixed') text = activeDirective.directive.fixedText
+        if (activeDirective?.directive.mode === 'semi_fixed') {
+          const submitted = new Set(requested.factIds ?? [])
+          const missing = activeDirective.directive.requiredFacts.filter(fact => !submitted.has(fact.id) || !(fact.allowParaphrase ? (fact.evidenceTerms?.length ? fact.evidenceTerms : [fact.value]) : [fact.value]).some(term => containsText(text, term))).map(fact => fact.id)
+          const forbidden = activeDirective.directive.forbiddenFacts.filter(value => containsText(text, value))
+          const invalidAct = activeDirective.directive.allowedActs.length > 0 && (!requested.speechAct || !activeDirective.directive.allowedActs.includes(requested.speechAct))
+          if (missing.length || forbidden.length || invalidAct) {
+            d.questDirectiveAttempts ??= {}
+            const old = d.questDirectiveAttempts[activeDirective.activationEventId]
+            if (!old || old.turn !== d.world.turn || old.failures < 1) {
+              d.questDirectiveAttempts[activeDirective.activationEventId] = { failures: 1, turn: d.world.turn }
+              return reply({ error: `半固定directiveの制約に一致しません: missing=${missing.join('、') || 'なし'} / forbidden=${forbidden.join('、') || 'なし'} / speechAct=${invalidAct ? '不許可' : '可'}`, retry: true, retriesRemaining: 0 }, false)
+            }
+            text = activeDirective.directive.fallbackText; fallbackUsed = true
+          }
+        }
+        const value = { ...requested, text }
         const recipients = speechRecipients(facility, actor, d.world.actors, value.volume)
         const event = this.event(d, actor, 'speech', value.text, recipients)
         d.world.events[d.world.events.length - 1] = { ...event, volume: value.volume }
+        const baseDirection = d.actorDirectionSettings?.[actor.id]?.settings
+        const rawOverrides = this.services.dialogueOverrides?.({ actorId: actor.id, locationId: actor.locationId, turn: d.world.turn, text: value.text })
+        const overrides = rawOverrides ? dialogueRequestOverridesSchema.parse(rawOverrides) : undefined
+        if (baseDirection || overrides) {
+          d.dialogueDirectionAudit ??= []
+          d.dialogueDirectionAudit.push({ eventId: event.sequence, actorId: actor.id, turn: d.world.turn,
+            base: baseDirection ?? { ...COMPATIBLE_DIALOGUE_SETTINGS }, effective: resolveDialogueRequest(baseDirection ?? COMPATIBLE_DIALOGUE_SETTINGS, overrides),
+            questOverrideApplied: !!overrides?.quest, utteranceOverrideApplied: !!overrides?.utterance,
+            ...(activeDirective ? { directiveId: activeDirective.directive.id, sourceTextChanged: requested.text !== text } : {}) })
+        }
+        if (activeDirective) {
+          d.questDirectiveReceipts ??= {}
+          d.questDirectiveReceipts[activeDirective.directive.id] = { turn: d.world.turn, eventId: event.sequence }
+          d.activeQuestDirectiveIds = d.activeQuestDirectiveIds?.filter(id => id !== activeDirective.directive.id)
+          const completionEvent = { questId: activeDirective.questId, directiveId: activeDirective.directive.id, activationEventId: activeDirective.activationEventId, stage: activeDirective.stage, turn: d.world.turn, speechEventId: event.sequence, text: value.text, deliveryMode: activeDirective.directive.mode, fallbackUsed }
+          delete d.questDirectiveActivationIds?.[activeDirective.directive.id]; delete d.pendingQuestLocations?.[activeDirective.directive.id]; delete d.questDirectiveAttempts?.[activeDirective.activationEventId]
+          this.services.questCompleted?.(completionEvent)
+        }
         for (const id of recipients) {
           this.enqueue(d, id, 'message', JSON.stringify({ kind: 'heardSpeech', eventId: event.sequence, turn: d.world.turn, speaker: { id: actor.id, name: actor.name, position: actor.position }, volume: value.volume, text: value.text }))
         }

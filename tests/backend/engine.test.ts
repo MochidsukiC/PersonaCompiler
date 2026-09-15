@@ -13,6 +13,8 @@ import { FixturePersistencePort } from './persistence-fixture'
 import { chicken, personal, seed } from '../fixtures/economy'
 import type { EconomySeed } from '../../src/core/economy-contracts'
 import { DevStore } from '../../src/backend/dev-store'
+import { defaultDirectionSettings } from '../../src/core/direction-settings'
+import { defaultQuestSettings, questSettingsSchema } from '../../src/core/quest-settings'
 
 class Runtime implements AgentRuntime {
   toolHandler: (call: RuntimeToolCall) => Promise<RuntimeToolResult> = async () => { throw new Error('No tool handler') }
@@ -148,6 +150,37 @@ async function review(engine: BackendEngine, runtime: Runtime, configuration = s
 }
 
 describe('Preparation harness', () => {
+  it.each([false, true])('restores direction settings and game-owned quest progress with completed speech (memory=%s)', async memory => {
+    const { engine, runtime, root } = await setup(undefined, memory)
+    const direction = { ...defaultDirectionSettings(), world: { ...defaultDirectionSettings().world, directionProfile: 'comedy' as const } }
+    await engine.backendCommand({ type: 'directionSettings', expectedRevision: 0, settings: { version: 1, world: direction.world, regions: direction.regions, npcs: direction.npcs } })
+    await review(engine, runtime)
+    await engine.backendCommand({ type: 'approve', revision: 1 })
+    await complete(engine, runtime, population)
+    const directives = Object.fromEntries(['before_acceptance', 'in_progress', 'objective_complete', 'reward_received'].map(stage => [stage, { id: `quest-${stage}`, enabled: true, mode: 'fixed', fixedText: '鍵は噴水のそばです。' }]))
+    const quest = questSettingsSchema.parse({ ...defaultQuestSettings(), quests: [{ id: 'quest', name: '鍵', targetNpcId: 'npc0', stage: 'reward_received', directives }] }).quests[0]
+    const configured = await engine.backendCommand({ type: 'questSettings', expectedRevision: 0, settings: { version: 1, quests: [quest] } })
+    expect(configured.questSettings!.quests[0].stage).toBe('before_acceptance')
+    await engine.backendCommand({ type: 'questEvent', source: 'game_adapter', eventId: 'stage-1', questId: 'quest', action: 'set_stage', stage: 'in_progress' })
+    const speech = await engine.backendCommand({ type: 'questEvent', source: 'game_adapter', eventId: 'speech-1', questId: 'quest', action: 'trigger', trigger: 'player_interact' })
+    expect(speech.questEventResult).toMatchObject({ status: 'spoken', completionEvent: { text: '鍵は噴水のそばです。', activationEventId: 'speech-1', stage: 'in_progress' } })
+    expect(runtime.inputs.some(text => text.includes('ゲーム側からクエスト発話が発火'))).toBe(false)
+    const frozen = engine.backendStatus().preparation.population!.npcs[0].resolvedDialogueSettings
+    await engine.backendCommand({ type: 'directionSettings', expectedRevision: 1, settings: { version: 1, world: defaultDirectionSettings().world, regions: {}, npcs: {} } })
+    await engine.backendCommand({ type: 'questSettings', expectedRevision: speech.questSettings!.revision, settings: { version: 1, quests: [quest] } })
+    expect(engine.backendStatus().questSettings!.quests[0].stage).toBe('in_progress')
+    const saved = engine.backendStatus()
+    await engine.close(); engines.delete(engine)
+    const restored = await setup(root, memory)
+    expect(restored.engine.backendStatus().directionSettings).toEqual(saved.directionSettings)
+    expect(restored.engine.backendStatus().questSettings).toEqual(saved.questSettings)
+    expect(restored.engine.backendStatus().preparation.population!.npcs[0].resolvedDialogueSettings).toEqual(frozen)
+    const replay = await restored.engine.backendCommand({ type: 'questEvent', source: 'game_adapter', eventId: 'speech-1', questId: 'quest', action: 'trigger', trigger: 'player_interact' })
+    expect(replay.questEventResult!.status).toBe('duplicate')
+    expect(replay.questSettings!.completionEvents).toHaveLength(1)
+    await restored.engine.backendCommand({ type: 'questEvent', source: 'game_adapter', eventId: 'consume-1', questId: 'quest', action: 'consume_completion', speechEventId: speech.questEventResult!.completionEvent!.speechEventId })
+    expect(restored.engine.backendStatus().questSettings!.completionEvents).toEqual([])
+  })
   it('rejects an invalid durable seed before initialization and rereads a corrected artifact without regeneration', async () => {
     const { engine, runtime } = await setup(undefined, true)
     const corrected: EconomySeed = { ...seed, catalog: [{ item: { ...chicken, kind: 'durable', durability: 100 }, licensees: [personal()] }, { item: { ...chicken, id: 'initial-food', name: '初期食料' }, licensees: [] }] }
@@ -343,6 +376,7 @@ describe('Preparation harness', () => {
 
   it.each([false, true])('requires an explicit design choice and preserves acceptance across restoration (memory=%s)', async memory => {
     const { engine, runtime, root, input, reviewId } = await pendingDesign(memory)
+    const expected = { npcs: input.npcs.map(npc => ({ ...npc, resolvedDialogueSettings: defaultDirectionSettings().world, dialogueSettingsResolution: { directionRevision: 0, regionId: 'town' } })) }
     expect(engine.backendStatus().preparation.population).toBeNull()
     expect(engine.backendStatus().preparation.error).toBeNull()
     expect(engine.snapshot().error).toBeNull()
@@ -352,13 +386,13 @@ describe('Preparation harness', () => {
     expect(runtime.inputs).toHaveLength(turns)
     await engine.backendCommand({ type: 'resolveDesign', reviewId, action: 'continue', message: '' })
     await vi.waitFor(() => expect(engine.backendStatus().preparation.phase).toBe('ready'), { timeout: 10000 })
-    expect(engine.backendStatus().preparation.population).toEqual(input)
+    expect(engine.backendStatus().preparation.population).toEqual(expected)
     expect(engine.backendStatus().preparation.designReview?.decision).toBe('accepted')
     expect(runtime.created).toHaveLength(9)
     await engine.close(); engines.delete(engine)
     const restored = await setup(root, memory)
     expect(restored.engine.backendStatus().preparation.designReview?.decision).toBe('accepted')
-    expect(restored.engine.backendStatus().preparation.population).toEqual(input)
+    expect(restored.engine.backendStatus().preparation.population).toEqual(expected)
     expect(restored.runtime.created).toEqual([])
   })
 
@@ -372,7 +406,7 @@ describe('Preparation harness', () => {
     expect(engine.backendStatus().preparation.designReview?.decision).toBe('correctionRequested')
     await complete(engine, runtime, population)
     expect(engine.backendStatus().preparation.designReview).toBeUndefined()
-    expect(engine.backendStatus().preparation.population).toEqual(population)
+    expect(engine.backendStatus().preparation.population).toEqual({ npcs: population.npcs.map(npc => ({ ...npc, resolvedDialogueSettings: defaultDirectionSettings().world, dialogueSettingsResolution: { directionRevision: 0, regionId: 'town' } })) })
   })
 
   it('requires a fresh choice if generated output changes before acceptance', async () => {
@@ -596,15 +630,20 @@ describe('Preparation harness', () => {
     expect(binding.cwd).toBe(await realpath(binding.cwd))
     expect(binding.cwd).toContain(`${path.sep}physical${path.sep}`)
   })
-  it('applies independent model Auto and age effort to initial sessions', async () => {
+  it('applies independent model Auto and Tier effort to initial sessions', async () => {
     const { engine, runtime } = await setup()
     await review(engine, runtime, { ...settings, npc: { model: { mode: 'auto' }, effort: { mode: 'auto' } } })
+    const direction = engine.backendStatus().directionSettings!
+    await engine.backendCommand({ type: 'directionSettings', expectedRevision: direction.revision, settings: {
+      version: 1, world: direction.world, regions: {},
+      npcs: { npc0: { tier: 0 }, npc1: { tier: 1 }, npc2: { tier: 2 }, npc3: { tier: 3 }, npc4: { tier: 3 } }
+    } })
     await engine.backendCommand({ type: 'approve', revision: 1 })
     const selected = structuredClone(population)
     selected.npcs[0].birthModelId = models[1].model
     selected.npcs[0].modelSelectionReason = '先天的特徴として親が選択'
     await complete(engine, runtime, selected)
-    expect(engine.backendStatus().preparation.sessions.filter(s => s.role === 'npc').map(s => s.effort)).toEqual(['low', 'medium', 'high', 'high', 'high'])
+    expect(engine.backendStatus().preparation.sessions.filter(s => s.role === 'npc').map(s => s.effort)).toEqual(['low', 'low', 'medium', 'high', 'high'])
     expect(engine.backendStatus().preparation.sessions.find(s => s.agentId === 'npc0')?.modelId).toBe(models[1].model)
   })
   it('rejects a draft before the required initial question round is answered', async () => {
@@ -690,10 +729,14 @@ describe('DEV experiments', () => {
     const point = (await engine.devPanel()).checkpoints.find(c => c.label === 'Turn 1 終了')!
     expect(point).toBeDefined()
     const savedEconomy = engine.backendStatus().simulation!.economy!
+    const savedDirection = engine.backendStatus().directionSettings!
+    const savedQuests = engine.backendStatus().questSettings!
     expect(savedEconomy.vitals.npc0).toMatchObject({ hp: 100, hunger: 90, san: 98 })
     const oldThreads = engine.backendStatus().preparation.sessions.map(s => s.threadId)
     const oldHistory = structuredClone(runtime.historyTurns)
     await engine.backendCommand({ type: 'devPrompts', prompts: { npc: 'LATEST {{townName}} {{birthModelId}}', parent: 'PARENT_LATEST' } })
+    await engine.backendCommand({ type: 'directionSettings', expectedRevision: savedDirection.revision, settings: { version: 1, regions: savedDirection.regions, npcs: savedDirection.npcs, world: { ...savedDirection.world, directionProfile: 'comedy' } } })
+    await engine.backendCommand({ type: 'questSettings', expectedRevision: savedQuests.revision, settings: { version: 1, quests: [] } })
     await engine.workspace.write('future-only.txt', 'after checkpoint')
     await engine.backendCommand({ type: 'startSimulation', step: true })
     await vi.waitFor(() => expect(engine.backendStatus().simulation?.turn).toBe(2))
@@ -706,10 +749,13 @@ describe('DEV experiments', () => {
     expect(engine.backendStatus().error).toBeNull()
     expect(engine.backendStatus().simulation).toMatchObject({ turn: 1, stage: 'paused', phase: 'between' })
     expect(engine.backendStatus().simulation!.economy).toEqual(savedEconomy)
+    expect(engine.backendStatus().directionSettings).toEqual(savedDirection)
+    expect(engine.backendStatus().questSettings).toEqual(savedQuests)
     expect(engine.backendStatus().preparation.sessions.every(s => s.economyVersion === 1)).toBe(true)
     expect(engine.backendStatus().preparation.sessions.every(s => !oldThreads.includes(s.threadId))).toBe(true)
     expect((await engine.devPanel()).state?.prompts.parent).toBe('PARENT_LATEST')
     expect(runtime.resumed.filter(s => s.agentId === 'npc0').at(-1)?.instructions).toContain('LATEST 試験の町')
+    expect(runtime.resumed.filter(s => s.agentId === 'npc0').at(-1)?.instructions).toContain('<harness_direction_policy>')
     await expect(engine.workspace.read('future-only.txt')).rejects.toThrow()
     expect(await readFile(path.join(root, originalId, 'future-only.txt'), 'utf8')).toBe('after checkpoint')
     for (const binding of engine.backendStatus().preparation.sessions) {

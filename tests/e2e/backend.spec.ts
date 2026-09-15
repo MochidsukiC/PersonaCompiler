@@ -118,7 +118,7 @@ test('preparation UI submits Auto settings, free answers, revisions and exact ap
     }, { original, backend, round, draft, population })
     await page.getByLabel('NPCモデル', { exact: true }).selectOption('auto')
     await page.getByLabel('NPC effort', { exact: true }).selectOption('auto')
-    await expect(page.getByText('NPC年齢 → 要求effort → 実効effort')).toBeVisible()
+    await expect(page.getByText('NPC Tier → 要求effort → 実効effort')).toBeVisible()
     await page.getByRole('button', { name: '設定を保存して親端末を作成' }).click()
     await page.getByLabel('地域の説明').fill('5人、学校、職場のある町')
     await page.getByRole('button', { name: '資料を送信してヒアリングを開始' }).click()

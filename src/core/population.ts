@@ -1,6 +1,7 @@
 import type { MapDocument } from '../shared/contracts'
 import { populationSchema, type AgentModelSettings, type DesignIssue, type ModelInfo, type Population, type QuestionAnswers, type QuestionRound, type Specification } from './contracts'
 import { autoModels, requireModel, resolveEffort } from './models'
+import { COMPATIBLE_DIALOGUE_SETTINGS, resolveNpcDialogueSettings, type DirectionSettings } from './direction-settings'
 
 export function allocateCounts(total: number, ratios: number[]): number[] {
   if (!Number.isSafeInteger(total) || total < 0 || !ratios.length || ratios.some(r => !Number.isFinite(r) || r < 0) || Math.abs(ratios.reduce((a, b) => a + b, 0) - 1) > 0.000001) throw new Error('人口配分の人数または比率が不正です')
@@ -27,7 +28,7 @@ export function validateMap(spec: Specification, map: MapDocument): void {
   for (const connection of map.connections) if (!locations.has(connection.from) || !locations.has(connection.to)) throw new Error(`道の接続先が不明です: ${connection.id}`)
   for (const facility of spec.town.facilities) if (!locations.has(facility.locationId)) throw new Error(`施設の所在地が不明です: ${facility.id}`)
 }
-export function inspectPopulation(input: unknown, spec: Specification, map: MapDocument, settings: AgentModelSettings, models: ModelInfo[]): { population: Population; issues: DesignIssue[] } {
+export function inspectPopulation(input: unknown, spec: Specification, map: MapDocument, settings: AgentModelSettings, models: ModelInfo[], directionSettings?: DirectionSettings): { population: Population; issues: DesignIssue[] } {
   const population = populationSchema.parse(input)
   const { npcs } = population
   if (new Set(npcs.map(n => n.id)).size !== npcs.length) throw new Error('NPC IDが重複しています')
@@ -37,7 +38,9 @@ export function inspectPopulation(input: unknown, spec: Specification, map: MapD
   for (const npc of npcs) {
     if (npc.id === 'parent' || npc.id.startsWith('facility-') || !locations.has(npc.locationId)) throw new Error(`NPC IDまたは所在地が不正です: ${npc.id}`)
     if (!allowed.includes(npc.birthModelId)) throw new Error(`NPC ${npc.id} の出生時モデルが設定と一致しません: ${npc.birthModelId}`)
-    resolveEffort(requireModel(models, npc.birthModelId), settings.npc.effort, npc.age)
+    const areaId = map.locations.find(location => location.id === npc.locationId)?.areaId
+    const tier = directionSettings ? resolveNpcDialogueSettings(directionSettings, npc.id, areaId).tier : npc.resolvedDialogueSettings?.tier ?? COMPATIBLE_DIALOGUE_SETTINGS.tier
+    resolveEffort(requireModel(models, npc.birthModelId), settings.npc.effort, tier)
     if (new Set(npc.family.map(f => f.npcId)).size !== npc.family.length) throw new Error(`家族参照が重複しています: ${npc.id}`)
     for (const relation of npc.family) {
       const other = npcs.find(n => n.id === relation.npcId)
@@ -56,11 +59,16 @@ export function inspectPopulation(input: unknown, spec: Specification, map: MapD
   const sexes = spec.population.sexRatio.map((row, i) => ({ label: row.sex, expected: sexCounts[i], actual: npcs.filter(n => n.sex === row.sex).length }))
   for (const sex of new Set(npcs.map(n => n.sex))) if (!spec.population.sexRatio.some(row => row.sex === sex)) sexes.push({ label: sex, expected: 0, actual: npcs.filter(n => n.sex === sex).length })
   if (sexes.some(row => row.actual !== row.expected)) issues.push({ code: 'population.sexRatio', message: '性別比率が承認済みの人口配分と一致しません', details: sexes })
-  return { population, issues }
+  const areaByLocation = new Map(map.locations.map(location => [location.id, location.areaId]))
+  return { population: directionSettings ? { npcs: population.npcs.map(npc => ({
+    ...npc,
+    resolvedDialogueSettings: resolveNpcDialogueSettings(directionSettings, npc.id, areaByLocation.get(npc.locationId)),
+    dialogueSettingsResolution: { directionRevision: directionSettings.revision, regionId: areaByLocation.get(npc.locationId) ?? null }
+  })) } : population, issues }
 }
 
-export function validatePopulation(input: unknown, spec: Specification, map: MapDocument, settings: AgentModelSettings, models: ModelInfo[], accepted?: { population: Population; specificationHash: string; decision: string }, specificationHash?: string): Population {
-  const result = inspectPopulation(input, spec, map, settings, models)
+export function validatePopulation(input: unknown, spec: Specification, map: MapDocument, settings: AgentModelSettings, models: ModelInfo[], accepted?: { population: Population; specificationHash: string; decision: string }, specificationHash?: string, directionSettings?: DirectionSettings): Population {
+  const result = inspectPopulation(input, spec, map, settings, models, directionSettings)
   if (result.issues.length && !(accepted?.decision === 'accepted' && accepted.specificationHash === specificationHash && JSON.stringify(accepted.population) === JSON.stringify(result.population))) throw new Error(result.issues.map(issue => issue.message).join('\n'))
   return result.population
 }

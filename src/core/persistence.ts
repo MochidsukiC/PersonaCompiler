@@ -1,6 +1,8 @@
 import type { LifeCheckpoint } from './life-harness'
 import type { AgentModelSettings, PreparationProgress } from './contracts'
 import type { MemoryArchive } from './memory-contracts'
+import type { DirectionSettings } from './direction-settings'
+import type { QuestSettings } from './quest-settings'
 
 export interface SavedBackend {
   dev?: import('./dev-contracts').DevState
@@ -14,6 +16,8 @@ export interface SavedBackend {
   production?: import('./compiler-contracts').ProductionOperation
   authMode: 'chatgpt' | 'apiKey' | null
   settings: AgentModelSettings | null
+  directionSettings?: DirectionSettings
+  questSettings?: QuestSettings
   preparation: PreparationProgress
   artifactHash: string | null
 }

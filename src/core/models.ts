@@ -1,4 +1,5 @@
 import { agentModelSettingsSchema, type AgentModelSettings, type ModelInfo, type NpcEffortPolicy } from './contracts'
+import type { SimulationTier } from './direction-settings'
 
 export const AUTO_MODELS = ['gpt-5.6-luna', 'gpt-5.6-terra', 'gpt-5.6-sol', 'gpt-6-astra'] as const
 export const EFFORT_ORDER = ['none', 'minimal', 'low', 'medium', 'high', 'xhigh', 'max', 'ultra'] as const
@@ -14,12 +15,14 @@ export function autoModels(models: ModelInfo[]): ModelInfo[] {
 export function supportedEfforts(model: ModelInfo): string[] {
   return model.supportedReasoningEfforts.map(e => e.reasoningEffort)
 }
-export function requestedEffort(age: number): string {
-  if (!Number.isFinite(age) || age < 0) throw new Error(`NPC年齢が不正です: ${age}`)
-  return age < 6 ? 'low' : age < 18 ? 'medium' : 'high'
+export function requestedEffortForTier(tier: SimulationTier): string {
+  if (tier === 0) return 'minimal'
+  if (tier === 1) return 'low'
+  if (tier === 2) return 'medium'
+  return 'high'
 }
-export function resolveEffort(model: ModelInfo, policy: NpcEffortPolicy, age: number): { requested: string; effective: string } {
-  const requested = policy.mode === 'auto' ? requestedEffort(age) : policy.effort
+export function resolveEffort(model: ModelInfo, policy: NpcEffortPolicy, tier: SimulationTier): { requested: string; effective: string } {
+  const requested = policy.mode === 'auto' ? requestedEffortForTier(tier) : policy.effort
   const supported = supportedEfforts(model)
   if (supported.includes(requested)) return { requested, effective: requested }
   if (policy.mode === 'fixed') throw new Error(`モデル ${model.model} はeffort ${requested} に対応していません`)
@@ -36,9 +39,9 @@ export function defaultSettings(models: ModelInfo[]): AgentModelSettings {
 }
 export function validateSettings(input: AgentModelSettings, models: ModelInfo[]): AgentModelSettings {
   const settings = agentModelSettingsSchema.parse(input)
-  for (const role of [settings.parent, settings.facility]) resolveEffort(requireModel(models, role.modelId), { mode: 'fixed', effort: role.effort }, 18)
+  for (const role of [settings.parent, settings.facility]) resolveEffort(requireModel(models, role.modelId), { mode: 'fixed', effort: role.effort }, 3)
   const candidates = settings.npc.model.mode === 'auto' ? autoModels(models) : [requireModel(models, settings.npc.model.modelId)]
   if (!candidates.length) throw new Error('NPC Autoで利用可能なモデルがありません')
-  for (const model of candidates) for (const age of [0, 6, 18]) resolveEffort(model, settings.npc.effort, age)
+  for (const model of candidates) for (const tier of [0, 1, 2, 3] as const) resolveEffort(model, settings.npc.effort, tier)
   return settings
 }

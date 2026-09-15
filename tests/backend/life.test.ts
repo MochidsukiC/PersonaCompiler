@@ -266,6 +266,48 @@ describe('Residential space', () => {
     old.world.organizations = [{ id: 'company', name: '会社', type: 'company', purpose: '制作', founderId: 'unknown', foundedTurn: 0, locationId: null, members: [] }]
     await expect(setup(12, old)).rejects.toThrow('保存済み組織')
   })
+  it('enforces fixed, semi-fixed and location-locked quest dialogue in the Harness', async () => {
+    let mode: 'fixed' | 'semi_fixed' = 'fixed', locked = true
+    const services = Object.assign(new Services(), { questDirective: () => ({ questId: 'quest', questName: '依頼', stage: 'in_progress' as const, directive: { id: `directive-${mode}`, enabled: true, mode, fixedText: '必ずこの台詞', fallbackText: '今は話せません', content: '鍵について伝える', trigger: 'player_interact' as const, requiredFacts: [{ id: 'key', value: '鍵', allowParaphrase: false }], forbiddenFacts: ['犯人'], allowedActs: ['inform'], priority: 1, once: false, locationLock: { enabled: locked, locationId: 'school', maxWaitTurns: 4 } } }) })
+    const { harness } = await setup(8, undefined, services)
+    await harness.start(true); await active(harness)
+    const pending = await harness.triggerQuestDirective('npc0', 'player_interact', 'activation-fixed')
+    expect(pending.status).toBe('pending_location')
+    expect((await harness.triggerQuestDirective('npc0', 'player_interact', 'activation-duplicate')).deadlineTurn).toBe(pending.deadlineTurn)
+    locked = false
+    const spoken = await harness.triggerQuestDirective('npc0', 'player_interact', 'activation-duplicate')
+    expect(spoken.status).toBe('spoken')
+    expect(spoken.completionEvent?.activationEventId).toBe('activation-fixed')
+    expect(harness.snapshot().events.findLast(event => event.kind === 'speech')?.text).toBe('必ずこの台詞')
+    mode = 'semi_fixed'
+    expect((await harness.triggerQuestDirective('npc0', 'player_interact', 'activation-semi')).status).toBe('queued')
+    expect((await call(harness, 'npc0', 'sendMessage', { text: '犯人について話す', volume: 'low', questActivationEventId: 'activation-semi' })).success).toBe(false)
+    expect((await call(harness, 'npc0', 'sendMessage', { text: '鍵を預かっています', volume: 'low', questActivationEventId: 'activation-semi', factIds: ['key'], speechAct: 'inform' })).success).toBe(true)
+    expect((await harness.triggerQuestDirective('npc0', 'player_interact', 'activation-next')).status).toBe('queued')
+    const nextFailure = await call(harness, 'npc0', 'sendMessage', { text: '情報不足', volume: 'low', questActivationEventId: 'activation-next' })
+    expect(nextFailure.success).toBe(false)
+    expect(JSON.parse(nextFailure.contentItems[0].text).retry).toBe(true)
+  })
+  it('schedules NPC inference by Tier and records auditable rule decisions', async () => {
+    const initialized = await setup()
+    const saved = initialized.harness.checkpoint()
+    await initialized.harness.close(); running.delete(initialized.harness)
+    saved.actorDirectionSettings = Object.fromEntries(people.npcs.map((npc, tier) => [npc.id, {
+      settings: { tier: Math.min(tier, 3) as 0 | 1 | 2 | 3, directionProfile: 'classic' as const, expressionIntensity: 0 as const, dialogueMode: 'free' as const },
+      regionId: 'town', directionRevision: 1, lockedAtTurn: 0
+    }]))
+    const { harness, services } = await setup(8, saved)
+    await harness.start(true)
+    await vi.waitFor(() => {
+      const activity = services.starts.filter(row => row.text.includes('自分の行動を選んでください'))
+      expect(activity.map(row => row.agentId)).toEqual(['npc2', 'npc3', 'npc4'])
+    })
+    const audit = harness.checkpoint().schedulerAudit!
+    expect(audit.find(row => row.actorId === 'npc0')).toMatchObject({ tier: 0, mode: 'aggregate' })
+    expect(audit.find(row => row.actorId === 'npc1')).toMatchObject({ tier: 1, mode: 'event_only' })
+    expect(audit.find(row => row.actorId === 'npc2')).toMatchObject({ tier: 2, mode: 'phase' })
+    expect(audit.find(row => row.actorId === 'npc3')).toMatchObject({ tier: 3, mode: 'detailed' })
+  })
   it('projects departed residents into the destination with unset coordinates', async () => {
     const original = await setup()
     const saved = original.harness.checkpoint()

@@ -22,7 +22,7 @@ it('matches paraphrased subjective memories with the authenticated NPC model and
     await runtime.connect('chatgpt')
     expect(await runtime.account()).toMatchObject({ authenticated: true, mode: 'chatgpt' })
     const model = requireModel(await runtime.models(), 'gpt-5.6-luna')
-    const effort = resolveEffort(model, { mode: 'auto' }, 5).effective
+    const effort = resolveEffort(model, { mode: 'auto' }, 3).effective
     const input = { agentId: 'memory-acceptance-npc', cwd: root, modelId: model.model, effort, memories: [
       { id: 'loan', text: '葵が読み終わった小説を一週間だけ貸してくれた。私はその厚意がうれしかった。', people: ['aoi'], places: ['school'], topics: ['読書'] },
       { id: 'garden', text: '住宅街の花壇の種が芽を出した。毎朝水をあげたい。', people: [], places: ['home'], topics: ['園芸'] }
@@ -52,7 +52,7 @@ it('uses real memory tools and consolidates in the same NPC conversation before 
   try {
     await runtime.connect('chatgpt')
     const model = requireModel(await runtime.models(), 'gpt-5.6-luna')
-    const binding: SessionBinding = { agentId: 'npc0', sessionId: 'memory-tools', role: 'npc', modelId: model.model, effort: resolveEffort(model, { mode: 'auto' }, 5).effective, cwd: root, threadId: null, creation: 'requested', seedPersisted: false, lifeToolsVersion: 1, memoryVersion: 1 }
+    const binding: SessionBinding = { agentId: 'npc0', sessionId: 'memory-tools', role: 'npc', modelId: model.model, effort: resolveEffort(model, { mode: 'auto' }, 3).effective, cwd: root, threadId: null, creation: 'requested', seedPersisted: false, lifeToolsVersion: 1, memoryVersion: 1 }
     binding.threadId = await runtime.create(binding, new BootstrapPrompts().npc(population.npcs[0], draft.specification, true), { tools: lifeTools('npc', true), disableEnvironment: true })
     runtime.setToolHandler(async call => {
       expect(call.threadId).toBe(binding.threadId)

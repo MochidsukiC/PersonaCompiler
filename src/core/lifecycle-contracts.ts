@@ -1,4 +1,5 @@
 import { z } from 'zod'
+import { resolvedDialogueSettingsSchema } from './direction-settings'
 
 const id = z.string().regex(/^[a-zA-Z0-9][a-zA-Z0-9_-]{0,79}$/)
 export const identitySchema = z.object({
@@ -6,7 +7,9 @@ export const identitySchema = z.object({
   temperament: z.string().min(1), physicalAttributes: z.string(), occupation: z.string().nullable(),
   householdId: id, locationId: id,
   family: z.array(z.object({ npcId: id, relation: z.enum(['parent', 'child', 'sibling', 'spouse']) })),
-  birthModelId: z.string().min(1), modelSelectionReason: z.string().min(1)
+  birthModelId: z.string().min(1), modelSelectionReason: z.string().min(1),
+  resolvedDialogueSettings: resolvedDialogueSettingsSchema.optional(),
+  dialogueSettingsResolution: z.object({ directionRevision: z.number().int().nonnegative(), regionId: id.nullable() }).strict().optional()
 }).strict()
 export const residentSchema = identitySchema.extend({
   sexCategory: z.enum(['male', 'female', 'other']), generation: z.number().int().nonnegative(),

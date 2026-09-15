@@ -5,6 +5,8 @@ import { Explorer } from './Explorer'
 import { TerminalPane } from './TerminalPane'
 import { WorldView } from './WorldView'
 import { BackendPanel } from './BackendPanel'
+import { DirectionSettingsPanel } from './DirectionSettingsPanel'
+import { COMPATIBLE_DIALOGUE_SETTINGS } from '../../core/direction-settings'
 import { LifecyclePanel } from './LifecyclePanel'
 import { PersistencePanel } from './PersistencePanel'
 import { DevPanel } from './DevPanel'
@@ -14,6 +16,7 @@ import { EventTimeline } from './EventTimeline'
 import { OrganizationsPanel } from './OrganizationsPanel'
 import { EconomyPanel } from './EconomyPanel'
 import './overview.css'
+import { QuestEditor } from './QuestEditor'
 
 const phaseLabels = { morning: '朝', noon: '昼', evening: '夕', night: '夜' }
 const stageLabels = { draft: '準備前', preparing: '準備中', ready: '準備完了', running: 'シミュレーション中', paused: '一時停止中', ended: '終了', error: 'エラー' }
@@ -114,6 +117,13 @@ export default function App() {
   const readOnly = !!workspace.backend?.persistence?.readOnlyReason
   const agent = state.agents.find(item => item.id === activeId)
   const npcs = state.agents.filter(item => item.role === 'npc')
+  const directionRegions = state.map?.areas.map(area => ({ id: area.id, name: area.name })) ?? []
+  const directionNpcs = (workspace.backend?.preparation.population?.npcs ?? []).map(npc => {
+    const locationId = state.frame.positions[npc.id] ?? npc.locationId
+    const regionId = state.map?.locations.find(location => location.id === locationId)?.areaId ?? null
+    return { id: npc.id, name: npc.name, regionId }
+  })
+  const directionDisabledReason = readOnly ? '読み取り専用のため変更できません。' : state.stage === 'running' || state.stage === 'preparing' ? '設定を変更するにはシミュレーションを一時停止してください。' : null
   return <div className="app-shell">
     <header className="app-header"><div className="brand"><span className="brand-symbol"><Layers3 size={21} /></span><strong>Persona<span>Compiler</span></strong><span className="build-label">PREVIEW 0.1</span></div><div className="project-title"><Globe2 size={13} />{state.map?.name ?? '新しいシミュレーション'}<span>/ LOCAL</span></div><div className="header-right"><span className="demo-badge">{workspace.backend ? 'CODEX CLI' : 'DEMO MODE'}</span><button className="icon-button" title={workspace.backend ? 'Codex App Serverと実CLIに接続します。初期生成後はturn=0で停止します。' : 'この初期版は模擬Sessionです。ファイル操作は実際のディスクを使用します。'} aria-label="動作モードについて"><CircleHelp size={17} /></button></div></header>
     <div className="run-toolbar"><div className="run-state"><span className={`status-dot ${state.stage === 'paused' ? 'paused' : ''}`} /><strong>{stageLabels[state.stage]}</strong><span className="toolbar-divider" /><span className="time-day">DAY {String(state.frame.day).padStart(2, '0')}</span><Sun size={14} /><span>{phaseLabels[state.frame.phase]}</span><span className="muted">Turn {String(state.frame.turn).padStart(3, '0')}</span></div><div className="run-actions">{workspace.backend && <button className={`button compact ${devOpen ? 'primary' : 'ghost'}`} onClick={() => setDevOpen(!devOpen)}>DEV{workspace.backend.dev ? ' ON' : ''}</button>}{['running', 'preparing', 'paused'].includes(state.stage) && <button className="button compact" disabled={busy || readOnly} onClick={() => void action(() => state.stage === 'paused' ? window.persona.resume() : window.persona.pause())}>{state.stage === 'paused' ? <Play size={13} /> : <Pause size={13} />}{state.stage === 'paused' ? '再開' : '一時停止'}</button>}<button className="button ghost compact" disabled={busy} onClick={() => void action(() => window.persona.newRun())}><Plus size={14} />新しい実行</button></div></div>
@@ -131,6 +141,13 @@ export default function App() {
             <header className="overview-heading"><h1>概要</h1><p>{state.map?.name ?? '世界の準備'}{state.map && ` · ${npcs.length}人の住民 · ${state.map.locations.length}施設`}</p></header>
             {state.simulation?.lifecycle && <LifecyclePanel simulation={state.simulation} backend={workspace.backend} onAgent={openAgent} onFile={openFile} onError={report} />}
             {workspace.backend && <BackendPanel key={`backend:${runId}`} view={workspace.backend} onError={report} />}
+            {workspace.backend && <DirectionSettingsPanel key={`direction:${runId}`} settings={workspace.backend.directionSettings} compatibilityDefaults={COMPATIBLE_DIALOGUE_SETTINGS} regions={directionRegions} npcs={directionNpcs} busy={busy || workspace.backend.preparation.busy} disabledReason={directionDisabledReason} onSave={async (settings, expectedRevision) => {
+              const payload = { version: settings.version, world: settings.world, regions: settings.regions, npcs: settings.npcs }
+              await window.persona.backendCommand({ type: 'directionSettings', expectedRevision, settings: payload })
+            }} />}
+            {workspace.backend && <QuestEditor key={`quest:${runId}`} settings={workspace.backend.questSettings} npcs={directionNpcs} locations={state.map?.locations.map(location => ({ id: location.id, name: location.name })) ?? []} busy={busy || workspace.backend.preparation.busy} disabledReason={directionDisabledReason} onSave={async (settings, expectedRevision) => {
+              await window.persona.backendCommand({ type: 'questSettings', expectedRevision, settings: { version: settings.version, quests: settings.quests } })
+            }} />}
             {!state.map && (state.stage === 'draft' && (!workspace.backend || workspace.backend.preparation.sessions.length > 0)
               ? <Preparation real={!!workspace.backend} busy={busy || (!!workspace.backend && (!workspace.backend.authenticated || workspace.backend.preparation.busy))} onPrepare={(description, images) => void action(() => window.persona.prepare({ description, images }))} onError={report} />
               : <div className="preparing"><div className="preparing-icon"><Globe2 size={35} /></div><span className="eyebrow">PREPARATION PHASE</span><h2>{workspace.backend?.preparation.phase === 'idle' ? '世界を始める準備' : '町の輪郭を描いています'}</h2><p>{workspace.backend?.preparation.phase === 'idle' ? '接続・認証後に役割別設定を保存してください。' : '親エージェントと、地図と住民のための場所を準備中。'}</p>{!workspace.backend && <span className="demo-explanation">デモの地図を生成しています</span>}</div>)}

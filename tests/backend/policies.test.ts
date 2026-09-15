@@ -1,14 +1,14 @@
 import { describe, expect, it } from 'vitest'
-import { resolveEffort, requestedEffort, validateSettings } from '../../src/core/models'
+import { resolveEffort, requestedEffortForTier, validateSettings } from '../../src/core/models'
 import { allocateCounts, validateAnswers, validatePopulation } from '../../src/core/population'
 import { models, settings, draft, population, round, answers } from './fixtures'
 
 describe('Model policies and population invariants', () => {
-  it.each([[0, 'low'], [5, 'low'], [6, 'medium'], [17, 'medium'], [18, 'high'], [90, 'high']])('resolves age %i to %s', (age, expected) => expect(requestedEffort(age as number)).toBe(expected))
+  it.each([[0, 'minimal'], [1, 'low'], [2, 'medium'], [3, 'high']] as const)('resolves Tier %i to %s', (tier, expected) => expect(requestedEffortForTier(tier)).toBe(expected))
   it('maps unsupported effort to the nearest, choosing lower on a tie', () => {
     const model = { ...models[0], supportedReasoningEfforts: ['minimal', 'medium'].map(reasoningEffort => ({ reasoningEffort, description: '' })) }
-    expect(resolveEffort(model, { mode: 'auto' }, 5)).toEqual({ requested: 'low', effective: 'minimal' })
-    expect(() => resolveEffort(model, { mode: 'fixed', effort: 'low' }, 5)).toThrow('対応していません')
+    expect(resolveEffort(model, { mode: 'auto' }, 1)).toEqual({ requested: 'low', effective: 'minimal' })
+    expect(() => resolveEffort(model, { mode: 'fixed', effort: 'low' }, 1)).toThrow('対応していません')
   })
   it('supports all four NPC policy combinations and rejects incompatible fixed effort', () => {
     for (const model of [{ mode: 'fixed', modelId: models[0].model }, { mode: 'auto' }] as const) for (const effort of [{ mode: 'fixed', effort: 'medium' }, { mode: 'auto' }] as const) expect(validateSettings({ ...settings, npc: { model, effort } }, models)).toBeDefined()

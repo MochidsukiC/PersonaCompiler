@@ -3,6 +3,8 @@ import { devCommandSchema } from './dev-contracts'
 import type { Compilation } from './compiler-contracts'
 import { mapSchema } from '../shared/contracts'
 import { dimensionsSchema, type SimulationSnapshot } from './life-contracts'
+import { directionSettingsSchema, resolvedDialogueSettingsSchema, type DirectionSettings } from './direction-settings'
+import { questSettingsInputSchema, questStageSchema, questTriggerSchema, type QuestOperationResult, type QuestSettings } from './quest-settings'
 
 export const identifierSchema = z.string().regex(/^[a-zA-Z0-9][a-zA-Z0-9_-]{0,79}$/)
 export const effortSchema = z.string().min(1)
@@ -82,7 +84,9 @@ export const npcInitializationSchema = z.object({
   temperament: z.string().min(1), physicalAttributes: z.string(), occupation: z.string().nullable(),
   householdId: identifierSchema, locationId: identifierSchema,
   family: z.array(z.object({ npcId: identifierSchema, relation: z.enum(['parent', 'child', 'sibling', 'spouse']).describe(FAMILY_RELATION_GUIDANCE) })),
-  birthModelId: z.string().min(1), modelSelectionReason: z.string().min(1)
+  birthModelId: z.string().min(1), modelSelectionReason: z.string().min(1),
+  resolvedDialogueSettings: resolvedDialogueSettingsSchema.optional(),
+  dialogueSettingsResolution: z.object({ directionRevision: z.number().int().nonnegative(), regionId: identifierSchema.nullable() }).strict().optional()
 }).strict()
 export const populationSchema = z.object({ npcs: z.array(npcInitializationSchema).min(1) }).strict()
 export type NpcInitialization = z.infer<typeof npcInitializationSchema>
@@ -126,6 +130,9 @@ export interface BackendSnapshot {
   login: { id: string; url: string } | null
   models: ModelInfo[]
   settings: AgentModelSettings | null
+  directionSettings?: DirectionSettings
+  questSettings?: QuestSettings
+  questEventResult?: QuestOperationResult
   preparation: PreparationProgress
   error: string | null
   simulation?: SimulationSnapshot
@@ -137,6 +144,13 @@ export const backendCommandSchema = z.discriminatedUnion('type', [
   z.object({ type: z.literal('loginApiKey'), apiKey: z.string().min(1).max(1000) }),
   z.object({ type: z.literal('cancelLogin') }),
   z.object({ type: z.literal('settings'), settings: agentModelSettingsSchema }),
+  z.object({ type: z.literal('directionSettings'), expectedRevision: z.number().int().nonnegative(), settings: directionSettingsSchema.omit({ revision: true }) }),
+  z.object({ type: z.literal('questSettings'), expectedRevision: z.number().int().nonnegative(), settings: questSettingsInputSchema }),
+  z.object({ type: z.literal('questEvent'), source: z.literal('game_adapter'), eventId: identifierSchema, questId: identifierSchema, action: z.enum(['set_stage', 'trigger', 'consume_completion']), stage: questStageSchema.optional(), trigger: questTriggerSchema.optional(), speechEventId: z.number().int().positive().optional() }).superRefine((value, ctx) => {
+    if (value.action === 'set_stage' && !value.stage) ctx.addIssue({ code: 'custom', message: 'set_stageにはstageが必要です' })
+    if (value.action === 'trigger' && !value.trigger) ctx.addIssue({ code: 'custom', message: 'triggerにはtriggerが必要です' })
+    if (value.action === 'consume_completion' && !value.speechEventId) ctx.addIssue({ code: 'custom', message: 'consume_completionにはspeechEventIdが必要です' })
+  }),
   z.object({ type: z.literal('answers'), value: questionAnswersSchema }),
   z.object({ type: z.literal('revise'), revision: z.number().int(), message: z.string().min(1).max(50000) }),
   z.object({ type: z.literal('approve'), revision: z.number().int() }),

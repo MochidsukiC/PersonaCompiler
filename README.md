@@ -75,8 +75,14 @@ chokidar 5.0.0にも[監視開始順序のパッチ](improvements/48-watch-befor
 モデルAutoとeffort Autoは独立しています。初期値は接続先の既定モデル・既定effortを使う固定モードです。Harnessは親の初期文脈と各準備・人口生成要求に、保存済みの役割別モデル設定、Auto／固定の区別、固定モデルID、利用可能なNPCモデル候補を明示します。固定の場合も全NPCのbirthModelId・modelSelectionReasonを生成対象に含めます。
 
 - モデルAutoの候補は、利用可能モデルと `gpt-5.6-luna` / `gpt-5.6-terra` / `gpt-5.6-sol` / `gpt-6-astra` の共通部分です。親がスポーン時に理由付きで選び、`birthModelId`として保存します。配分比率は固定しません。
-- effort Autoは0〜5歳 `low`、6〜17歳 `medium`、18歳以上 `high`。未対応値は順序 `none < minimal < low < medium < high < xhigh < max < ultra` で最も近い対応値へ割り当て、同距離なら低い方を選びます。設定画面にモデル別の実効値を表示します。
+- effort AutoはTier 0 `minimal`、Tier 1 `low`、Tier 2 `medium`、Tier 3 `high`。演出設定のないNPCはTier 3として扱います。未対応値は順序 `none < minimal < low < medium < high < xhigh < max < ultra` で最も近い対応値へ割り当て、同距離なら低い方を選びます。設定画面にモデル別の実効値を表示します。
 - モデルAuto＋固定effortは、候補すべてが対応するeffortだけ選択できます。出生時モデルが利用不能になった場合は明示的なエラーとし、自動的なモデル変更はしません。
+
+## 会話演出・クエスト設定
+
+「概要」タブでワールド・地域・NPCごとのTier、演出プロファイル、表現強度、台詞方式を設定できます。演出設定は初期人口の確定時と出生時に固定し、既存NPCへ設定変更を遡って適用しません。Tier 0は通常の個別推論を省略、Tier 1はイベント時、Tier 2・3は生活フェーズごとに個別推論します。
+
+同じ画面でクエスト段階ごとの固定・半固定・自由生成台詞と場所条件を編集できます。段階変更と完了イベントの消費はゲーム側の責務です。連携方法は [QUEST_GAME_ADAPTER.md](QUEST_GAME_ADAPTER.md) を参照してください。
 
 ## 保存と責任分担
 
@@ -160,7 +166,7 @@ npm run test:persistence
 npm run test:e2e
 ```
 
-- 単体テスト: 既存デモ・ファイル監視・端末連番、Auto、年齢境界、人口配分、質問・承認、準備の復旧に加え、家の検証、3次元距離、家の双方向の遮音、移動予約、活動終了後の次ターン配送、まとめ配送、端末の遅延起動、履歴の差分更新、睡眠、配信重複防止、日付更新を確認します。
+- 単体テスト: 既存デモ・ファイル監視・端末連番、Auto、Tier別effort、人口配分、質問・承認、準備の復旧に加え、家の検証、3次元距離、家の双方向の遮音、移動予約、活動終了後の次ターン配送、まとめ配送、端末の遅延起動、履歴の差分更新、睡眠、配信重複防止、日付更新を確認します。
 - `test:connection`: 実Codex App Serverと実CLI PTYをlocalhostのResponses fixtureへ接続します。両方向入力、通知、effort、Ctrl+C、リサイズ、再接続、dynamicTools、Native Compact、履歴中の配信IDを確認します。5 NPC・3世帯・住宅街＋学校＋職場＋店舗の9 Conversationで、一日の生活も実行します。**このコマンドはOpenAIの実モデル推論や認証成功を検証するものではありません。**
 - Electron E2E: 既存デモ、実App Serverへの未認証接続、同梱Native PTY、IPC fixtureを使う設定・質問・仕様レビュー・承認、3D回転・ズーム・高さ変更、声の範囲、NPC端末選択、生活開始・1ターン実行を確認します。テストデータは `.local`、トレースは `test-results` です。
 

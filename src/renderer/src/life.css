@@ -21,3 +21,19 @@
 .interior-homes button.selected,.interior-people button.selected { border-color:#d1bb7e; color:#e9dcad; }
 .interior-homes small,.interior-people span { color:#8caa94; font-size:9px; }
 .interior-info details>summary { cursor:pointer; padding:4px 0; }
+.direction-settings { flex-shrink:0; max-height:48%; overflow:auto; border-bottom:1px solid var(--line); background:#18231c; }
+.direction-settings h4 { font-size:11px; font-weight:600; margin:13px 0 8px; color:#d1dfc9; }
+.quest-editor { flex-shrink:0; max-height:52%; overflow:auto; border-bottom:1px solid var(--line); background:#1c211b; }
+.quest-editor textarea { width:100%; box-sizing:border-box; }
+.direction-lock-note { color:#d7bd86!important; background:#4d422945; border-radius:4px; padding:7px 9px; }
+.direction-scope { margin-top:12px; border:1px solid #344638; border-radius:6px; padding:9px; }
+.direction-scope>summary { display:flex; gap:7px; align-items:center; cursor:pointer; }
+.direction-scope>summary small { color:#789174; }
+.direction-card { padding:11px 0; border-top:1px solid #304034; }
+.direction-card:first-of-type { margin-top:9px; }
+.direction-card>div:first-child { display:flex; justify-content:space-between; gap:10px; align-items:center; }
+.direction-card>div:first-child small { color:#839980; text-align:right; }
+.direction-grid { display:grid; grid-template-columns:repeat(2,minmax(120px,1fr)); gap:0 9px; margin-top:7px; }
+.direction-grid label { font-size:10px; color:#aabdac; }
+.direction-grid select { display:block; width:100%; margin:4px 0 7px; padding:8px; border:1px solid #445642; border-radius:5px; background:#121b15; color:#d8e5cf; font:inherit; }
+@media(max-width:720px) { .direction-grid { grid-template-columns:1fr; } .direction-card>div:first-child { align-items:flex-start; flex-direction:column; } .direction-card>div:first-child small { text-align:left; } }

@@ -58,7 +58,7 @@ export const lifeToolSchemas = {
   setInitialPosition: z.object({ position: voxelSchema }).strict(),
   moveWithinFacility: z.object({ position: voxelSchema }).strict(),
   moveToFacility: z.object({ facilityId: id }).strict(),
-  sendMessage: z.object({ text: z.string().min(1).max(50000), volume: voiceSchema }).strict(),
+  sendMessage: z.object({ text: z.string().min(1).max(50000), volume: voiceSchema, questActivationEventId: id.optional(), factIds: z.array(id).max(20).optional(), speechAct: z.string().max(100).optional() }).strict(),
   useFacility: z.object({ request: z.string().min(1).max(50000) }).strict(),
   completeFacilityUse: z.object({ requestId: z.string(), text: z.string().min(1).max(50000), publicState: z.string() }).strict(),
   endTurn: z.object({}).strict(),
