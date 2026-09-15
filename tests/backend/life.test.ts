@@ -14,7 +14,7 @@ const homes: FacilityLayout['homes'] = ['family-a', 'family-b', 'single'].map((h
 const residential: LifeFacility = { id: 'residential', locationId: 'home', name: '住宅街', type: 'residential', dimensions: { x: 30, y: 30, z: 3 }, layout: { homes, regions: [], publicState: '生活の場' } }
 const positions: Voxel[] = [{ x: 0, y: 0, z: 0 }, { x: 1, y: 0, z: 0 }, { x: 4, y: 0, z: 0 }, { x: 5, y: 0, z: 0 }, { x: 3, y: 0, z: 0 }]
 const running = new Set<LifeHarness>()
-afterEach(async () => { for (const h of running) await h.close(); running.clear() })
+afterEach(async () => { try { for (const h of running) await h.close(); running.clear() } finally { vi.useRealTimers() } })
 
 class Services implements LifeServices {
   harness!: LifeHarness
@@ -92,6 +92,140 @@ async function call(harness: LifeHarness, id: string, tool: string, args: unknow
   const turnId = harness.checkpoint().active[id].turnId!
   return harness.tool(id, { turnId, callId, tool, arguments: args })
 }
+
+async function rateLimit(harness: LifeHarness, services: Services, agentId = 'npc0', message = 'rate limit exceeded: Rate limit reached for gpt-5.6-sol on tokens per min (TPM). Please try again in 1.062s.') {
+  const turnId = harness.checkpoint().active[agentId].turnId!
+  services.turns.get(agentId)!.find(t => t.id === turnId)!.status = 'failed'
+  harness.notify(agentId, 'turn/completed', { turn: { id: turnId, status: 'failed', error: { message } } })
+  await harness.drain()
+  return turnId
+}
+
+describe('Rate limit recovery', () => {
+  it.each([false, true])('waits for the provider delay and continues accepted work once (memory=%s)', async memory => {
+    const services = new Services(), changes: LifeChange[] = []
+    if (memory) Object.assign(services, { memory: { initialize: () => undefined, changed: (change: LifeChange) => changes.push(change) } })
+    const { harness } = await setup(8, undefined, services)
+    await harness.start(); await active(harness)
+    await call(harness, 'npc0', 'moveWithinFacility', { position: { x: 2, y: 1, z: 0 } })
+    await call(harness, 'npc1', 'sendMessage', { text: '受信済みの発話', volume: 'medium', targetId: null })
+    await harness.drain()
+    const before = services.starts.length, events = harness.snapshot().events.length
+    vi.useFakeTimers({ toFake: ['Date', 'setTimeout', 'clearTimeout'] })
+    const failedTurn = await rateLimit(harness, services)
+    expect(harness.snapshot().stage).toBe('running')
+    expect(harness.checkpoint().jobs.filter(j => j.rateLimitRetry)).not.toHaveLength(0)
+    harness.notify('npc0', 'turn/completed', { turn: { id: failedTurn, status: 'failed', error: { message: 'rate limit exceeded' } } })
+    await harness.drain()
+    await vi.advanceTimersByTimeAsync(1062); await harness.drain()
+    expect(services.starts).toHaveLength(before)
+    await vi.advanceTimersByTimeAsync(400); await harness.drain()
+    expect(services.starts).toHaveLength(before + 1)
+    expect(services.starts.at(-1)).toMatchObject({ agentId: 'npc0', text: expect.stringContaining('未完了の処理だけ') })
+    expect(services.starts.at(-1)!.text).not.toContain('受信済みの発話')
+    const retries = harness.checkpoint().jobs.filter(j => j.rateLimitRetry)
+    expect(retries.every(j => j.turnId === services.starts.at(-1)!.turnId && j.status === 'running' && j.rateLimitRetry!.attempt === 1)).toBe(true)
+    expect(harness.snapshot().actors[0].position).toEqual({ x: 2, y: 1, z: 0 })
+    expect(harness.snapshot().events).toHaveLength(events)
+    expect(services.errors).toEqual([])
+    if (memory) expect(changes.some(c => c.patches.some(p => p.path[0] === 'rateLimitUntil'))).toBe(true)
+  })
+
+  it('increases delays and stops with the provider error after five retries', async () => {
+    const { harness, services } = await setup()
+    await harness.start(); await active(harness)
+    vi.useFakeTimers({ toFake: ['Date', 'setTimeout', 'clearTimeout'] })
+    for (let attempt = 1; attempt <= 5; attempt++) {
+      const before = services.starts.length
+      await rateLimit(harness, services, 'npc0', 'rate_limit_exceeded')
+      await vi.advanceTimersByTimeAsync(1000 * 2 ** (attempt - 1)); await harness.drain()
+      expect(services.starts).toHaveLength(before)
+      await vi.advanceTimersByTimeAsync(350); await harness.drain()
+      expect(services.starts).toHaveLength(before + 1)
+    }
+    await rateLimit(harness, services)
+    expect(harness.snapshot()).toMatchObject({ stage: 'error', error: expect.stringContaining('rate limit exceeded') })
+    const before = services.starts.length
+    await vi.advanceTimersByTimeAsync(60000); await harness.drain()
+    expect(services.starts).toHaveLength(before)
+  })
+
+  it('preserves the cooldown and retry across pause, close and restore', async () => {
+    const { harness, services } = await setup()
+    await harness.start(); await active(harness)
+    vi.useFakeTimers({ toFake: ['Date', 'setTimeout', 'clearTimeout'] })
+    await rateLimit(harness, services, 'npc0', 'rate limit exceeded. Please try again in 30s.')
+    const before = services.starts.length
+    await harness.pause(); await harness.drain()
+    const saved = harness.checkpoint()
+    await harness.close(); running.delete(harness)
+    await vi.advanceTimersByTimeAsync(10000)
+    expect(services.starts).toHaveLength(before)
+    const restored = await setup(8, saved, services)
+    await restored.harness.resume(); await restored.harness.drain()
+    await vi.advanceTimersByTimeAsync(20000); await restored.harness.drain()
+    expect(services.starts).toHaveLength(before)
+    await vi.advanceTimersByTimeAsync(350); await restored.harness.drain()
+    expect(services.starts.filter(s => s.agentId === 'npc0').at(-1)!.text).toContain('未完了の処理だけ')
+    expect(services.errors).toEqual([])
+  })
+
+  it('resumes memory consolidation after a paused retry and completes compaction', async () => {
+    const services = new Services()
+    Object.assign(services, {
+      memory: { initialize: () => undefined, changed: () => undefined },
+      cognition: { runId: 'retry-memory', match: async () => [] }
+    })
+    const { harness } = await setup(8, undefined, services)
+    await harness.start(); await active(harness)
+    await call(harness, 'npc0', 'sleep')
+    services.finish('npc0'); await harness.drain()
+    expect(harness.checkpoint().jobs.some(j => j.agentId === 'npc0' && j.kind === 'consolidation' && j.status === 'running')).toBe(true)
+    vi.useFakeTimers({ toFake: ['Date', 'setTimeout', 'clearTimeout'] })
+    await rateLimit(harness, services)
+    await harness.pause(); await harness.drain()
+    const before = services.starts.length
+    await vi.advanceTimersByTimeAsync(60000); await harness.drain()
+    expect(services.starts).toHaveLength(before)
+    await harness.resume(); await harness.drain()
+    expect((await call(harness, 'npc0', 'consolidateMemory', { memories: [], forgetIds: [], relations: [] })).success).toBe(true)
+    services.finish('npc0'); await harness.drain()
+    expect(harness.snapshot().memoryProgress?.npc0.consolidation).toBe('complete')
+    expect(harness.snapshot().actors[0].compact).toBe('complete')
+    expect(services.compacts.filter(id => id === 'npc0')).toHaveLength(1)
+    expect(services.errors).toEqual([])
+  })
+
+  it('retries compaction itself without resending a user message', async () => {
+    const { harness, services } = await setup()
+    await harness.start(); await active(harness)
+    const compact = services.compact.bind(services)
+    vi.spyOn(services, 'compact').mockImplementationOnce(async agentId => {
+      const id = crypto.randomUUID()
+      services.turns.get(agentId)!.push({ id, status: 'failed', clientIds: [], compact: true })
+      harness.notify(agentId, 'turn/started', { turn: { id } })
+      harness.notify(agentId, 'turn/completed', { turn: { id, status: 'failed', error: { message: 'rate limit exceeded' } } })
+    }).mockImplementation(compact)
+    vi.useFakeTimers({ toFake: ['Date', 'setTimeout', 'clearTimeout'] })
+    await call(harness, 'npc0', 'sleep')
+    services.finish('npc0'); await harness.drain()
+    const before = services.starts.length
+    expect(harness.snapshot().actors[0].compact).toBe('running')
+    await vi.advanceTimersByTimeAsync(1350); await harness.drain()
+    expect(services.compact).toHaveBeenCalledTimes(2)
+    expect(services.starts).toHaveLength(before)
+    expect(harness.snapshot().actors[0].compact).toBe('complete')
+    expect(services.errors).toEqual([])
+  })
+
+  it.each(['Invalid prompt', 'insufficient_quota: rate limit exceeded', 'rate limit exceeded. Please try again in 120s.', 'rate limit exceeded. Please try again in 1m1s.', 'rate limit exceeded. Please try again in unknown.'])('keeps non-retryable failures visible: %s', async message => {
+    const { harness, services } = await setup()
+    await harness.start(); await active(harness)
+    await rateLimit(harness, services, 'npc0', message)
+    expect(harness.snapshot()).toMatchObject({ stage: 'error', error: expect.stringContaining(message) })
+    expect(harness.checkpoint().jobs.some(j => j.rateLimitRetry)).toBe(false)
+  })
+})
 
 describe('Residential space', () => {
   it.each([false, true])('persists parent events, notification scope and duplicate receipts (memory=%s)', async memory => {

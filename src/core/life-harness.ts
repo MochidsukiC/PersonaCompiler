@@ -19,6 +19,7 @@ import { COMPATIBLE_DIALOGUE_SETTINGS, dialogueRequestOverridesSchema, resolvedD
 import type { QuestDirective, QuestStage, QuestTrigger } from './quest-settings'
 
 const jobSchema = z.object({
+  rateLimitRetry: z.object({ attempt: z.number().int().min(1).max(5), turnId: z.string(), message: z.string() }).optional(),
   batchId: z.string().optional(),
   homeRequestId: z.string().optional(),
   id: z.string(), agentId: z.string(), text: z.string(), kind: z.enum(['layout', 'position', 'activity', 'message', 'facility', 'reply', 'compact', 'user', 'consolidation', 'home', 'notice']),
@@ -26,6 +27,7 @@ const jobSchema = z.object({
 })
 const resultSchema = z.object({ success: z.boolean(), contentItems: z.array(z.object({ type: z.literal('inputText'), text: z.string() })) })
 export const lifeCheckpointSchema = z.object({
+  rateLimitUntil: z.number().finite().nonnegative().optional(),
   economyArchive: z.array(economyRecordSchema).optional(),
   cognition: memorySnapshotSchema.optional(), memoryArchive: z.array(memoryArchiveSchema).optional(),
   actorDirectionSettings: z.record(z.string(), z.object({
@@ -91,6 +93,7 @@ export class LifeHarness {
   private lastYield = performance.now()
   private operationsSinceYield = 0
   private closed = false
+  private rateLimitTimer: ReturnType<typeof setTimeout> | null = null
   private stopTask: Promise<void> | null = null
   private readonly pending = new Set<Promise<unknown>>()
   private readonly receipts = new Map<string, LifeCheckpoint['receipts'][string]>()
@@ -494,6 +497,7 @@ export class LifeHarness {
     })
   }
   async pause(): Promise<void> {
+    if (this.rateLimitTimer) { clearTimeout(this.rateLimitTimer); this.rateLimitTimer = null }
     await this.update(d => { if (!['ready', 'ended'].includes(d.world.stage)) d.world.stage = 'paused' })
     for (const request of this.recallTasks.values()) request.abort.abort(new LifeRuleError('記憶照合を一時停止しました'))
     await Promise.all(Object.entries(this.data.active).flatMap(([id, active]) => active.turnId ? [this.services.interrupt(id, active.turnId)] : []))
@@ -526,7 +530,8 @@ export class LifeHarness {
     if (this.data.world.lifecycle?.births.some(b => b.status === 'requested')) throw new LifeRuleError('新生児生成の結果が未確定です。自動再送しません')
     if (this.cognition) for (const npc of this.people()) {
       const owner = this.cognition.owner(npc.id)
-      if (owner.recalls.some(r => ['requested', 'running', 'uncertain'].includes(r.status)) || owner.consolidation === 'running') throw new LifeRuleError(`記憶操作が未確定です。自動再送しません: ${npc.id}`)
+      const waitingForRateLimit = this.data.jobs.some(j => j.agentId === npc.id && j.kind === 'consolidation' && j.status === 'queued' && j.rateLimitRetry)
+      if (owner.recalls.some(r => ['requested', 'running', 'uncertain'].includes(r.status)) || (owner.consolidation === 'running' && !waitingForRateLimit)) throw new LifeRuleError(`記憶操作が未確定です。自動再送しません: ${npc.id}`)
     }
     if (Object.keys(this.data.terminalWrites).length) throw new LifeRuleError(`端末入力の配信結果が未確定です。自動再送しません: ${Object.keys(this.data.terminalWrites).join(', ')}`)
     const pending = this.data.jobs.filter(j => ['requested', 'running'].includes(j.status))
@@ -699,6 +704,12 @@ export class LifeHarness {
   }
   private async drive(): Promise<void> {
     if (this.closed || !['initializing', 'running'].includes(this.data.world.stage)) return
+    const delay = (this.data.rateLimitUntil ?? 0) - Date.now()
+    if (delay > 0) {
+      if (this.rateLimitTimer) clearTimeout(this.rateLimitTimer)
+      this.rateLimitTimer = setTimeout(() => { this.rateLimitTimer = null; this.kick() }, delay)
+      return
+    }
     this.requestItems()
     for (const actor of this.data.world.actors.filter(a => a.activity === 'dead')) {
       const active = this.data.active[actor.id]
@@ -711,12 +722,13 @@ export class LifeHarness {
       const actions: { job: Job; activeTurn: string | null; steer: boolean }[] = []
       const writes: [string, string][] = []
       if (this.closed || !['initializing', 'running'].includes(d.world.stage)) return { actions, births: [], writes }
+      if ((d.rateLimitUntil ?? 0) > Date.now()) return { actions, births: [], writes }
       this.advance(d)
       if (!['initializing', 'running'].includes(d.world.stage)) return { actions, births: [], writes }
       if (d.world.phase === 'activity') for (const a of d.world.actors) {
         const tier = this.simulationTier(d, a.id)
         if (tier === 0) for (const job of d.jobs) {
-          if (job.agentId === a.id && job.status === 'queued' && ['message', 'reply', 'notice'].includes(job.kind)) job.status = 'discarded'
+          if (!job.rateLimitRetry && job.agentId === a.id && job.status === 'queued' && ['message', 'reply', 'notice'].includes(job.kind)) job.status = 'discarded'
         }
         const busy = d.active[a.id] || [...this.recallTasks.keys()].some(key => key.startsWith(`${a.id}:`)) || d.jobs.some(j => j.agentId === a.id && ['queued', 'requested', 'running'].includes(j.status))
         if (busy) continue
@@ -751,12 +763,12 @@ export class LifeHarness {
         if (job.status !== 'queued') continue
         const recipient = d.world.actors.find(a => a.id === job.agentId)
         if (recipient?.activity === 'dead') { job.status = 'discarded'; continue }
-        if (recipient?.activity === 'sleeping' && ['message', 'reply', 'user'].includes(job.kind)) {
+        if (!job.rateLimitRetry && recipient?.activity === 'sleeping' && ['message', 'reply', 'user'].includes(job.kind)) {
           job.status = job.kind === 'message' ? 'discarded' : 'deferred'
           continue
         }
         const active = d.active[job.agentId]
-        if (recipient?.activity === 'ended' && ['message', 'reply', 'user'].includes(job.kind)) { job.status = 'deferred'; continue }
+        if (!job.rateLimitRetry && recipient?.activity === 'ended' && ['message', 'reply', 'user'].includes(job.kind)) { job.status = 'deferred'; continue }
         if (active && (!active.turnId || active.kind === 'compact' || job.kind === 'compact')) continue
         if (active && requestedAgents.has(job.agentId)) continue
         if (recipient && d.world.phase === 'activity') {
@@ -768,15 +780,20 @@ export class LifeHarness {
         requestedAgents.add(job.agentId)
         if (active) job.turnId = active.turnId
         if (!active) d.active[job.agentId] = { turnId: null, kind: job.kind === 'compact' ? 'compact' : 'normal', compactSeen: false }
-        if (this.cognition && recipient && recipient.activity !== 'sleeping') {
+        if (!job.rateLimitRetry && this.cognition && recipient && recipient.activity !== 'sleeping') {
           const reminders = this.reminders(d, recipient)
           if (reminders.length) job.reminders = [...(job.reminders ?? []), ...reminders]
         }
         const batch = [job]
-        if (job.kind === 'message') {
+        if (job.rateLimitRetry) {
+          for (const queued of queues.get(job.agentId)!) {
+            if (queued.status !== 'queued' || queued.rateLimitRetry?.turnId !== job.rateLimitRetry.turnId) continue
+            queued.status = 'requested'; queued.batchId = job.id; queued.turnId = job.turnId
+          }
+        } else if (job.kind === 'message') {
           let characters = job.text.length
           for (const queued of queues.get(job.agentId)!.slice(1)) {
-            if (queued.status !== 'queued' || queued.kind !== 'message' || batch.length >= 32 || characters + queued.text.length > 32000) break
+            if (queued.status !== 'queued' || queued.rateLimitRetry || queued.kind !== 'message' || batch.length >= 32 || characters + queued.text.length > 32000) break
             queued.status = 'requested'; queued.batchId = job.id; queued.turnId = job.turnId
             batch.push(queued); characters += queued.text.length
           }
@@ -808,8 +825,8 @@ export class LifeHarness {
       return
     }
     let turnId = activeTurn
-    let text = job.text
-    if (this.cognition && (job.kind === 'consolidation' || job.reminders?.length)) {
+    let text = job.rateLimitRetry ? '直前の推論は一時的なrate limitで中断しました。このConversationの履歴と確定済みTool結果を確認し、未完了の処理だけを続けてください。実行済みの発話・行動・更新は繰り返さないでください。' : job.text
+    if (!job.rateLimitRetry && this.cognition && (job.kind === 'consolidation' || job.reminders?.length)) {
       if (job.kind === 'consolidation') {
         const owner = this.cognition.owner(job.agentId)
         text += `\n${JSON.stringify({ memorySources: this.cognition.availableSources(job.agentId), candidates: owner.candidates, records: owner.records, relations: owner.relations })}`
@@ -872,7 +889,7 @@ export class LifeHarness {
         if (value.item.type === 'userMessage' && ['activity', 'between'].includes(d.world.phase)) {
           const actor = d.world.actors.find(a => a.id === agentId)
           const delivered = d.jobs.filter(j => value.item.clientId && (j.id === value.item.clientId || j.batchId === value.item.clientId) && j.agentId === agentId)
-          for (const job of delivered) if (this.cognition && actor && ['message', 'reply', 'notice'].includes(job.kind)) this.memoryChanges.push(this.cognition.source(agentId, `delivery:${job.id}`, d.world.turn, job.text, 'received'))
+          for (const job of delivered) if (!job.rateLimitRetry && this.cognition && actor && ['message', 'reply', 'notice'].includes(job.kind)) this.memoryChanges.push(this.cognition.source(agentId, `delivery:${job.id}`, d.world.turn, job.text, 'received'))
         }
       } else if (method === 'turn/completed') {
         const { turn } = z.object({ turn: z.object({ id: z.string(), status: z.string(), error: z.object({ message: z.string() }).nullable().optional() }) }).parse(params)
@@ -889,6 +906,23 @@ export class LifeHarness {
           return error
         }
         if (turn.status !== 'completed') {
+          const message = turn.error?.message ?? ''
+          const attempt = Math.max(0, ...jobs.map(j => j.rateLimitRetry?.attempt ?? 0)) + 1
+          const hint = message.match(/Please try again in (?:(\d+(?:\.\d+)?)m)?(?:(\d+(?:\.\d+)?)s)?(?:(\d+(?:\.\d+)?)ms)?(?=[.\s]|$)/i)
+          const seconds = hint && (hint[1] || hint[2] || hint[3]) ? Number(hint[1] ?? 0) * 60 + Number(hint[2] ?? 0) + Number(hint[3] ?? 0) / 1000 : /Please try again in/i.test(message) ? Infinity : 0
+          if (turn.status === 'failed' && jobs.length && attempt <= 5 && seconds <= 60 &&
+              /^(?:rate limit exceeded\b|rate limit reached for\b|rate_limit_exceeded\b)/i.test(message) &&
+              !/insufficient_quota|billing|quota exceeded|usage limit/i.test(message)) {
+            d.rateLimitUntil = Math.max(d.rateLimitUntil ?? 0, Date.now() + Math.max(seconds * 1000, 1000 * 2 ** (attempt - 1)) + 100 + Math.floor(Math.random() * 250))
+            const retries = jobs.map(job => {
+              job.status = 'done'
+              const retry: Job = { ...plainLifeValue(job), id: unique(), turnId: null, completed: false, status: 'queued', rateLimitRetry: { attempt, turnId: turn.id, message } }
+              delete retry.batchId
+              return retry
+            })
+            d.jobs.push(...retries)
+            return
+          }
           if (jobs.some(j => j.kind === 'consolidation') && this.cognition && this.cognition.owner(agentId).consolidation !== 'complete') this.memoryChanges.push(this.cognition.prepare(agentId, owner => { owner.consolidation = turn.status === 'interrupted' ? 'interrupted' : 'failed' }))
           if (active?.kind === 'compact') this.actor(d, agentId).compact = 'pending'
           if (turn.status === 'interrupted') { if (d.world.stage !== 'error') d.world.stage = 'paused' }
@@ -1357,5 +1391,6 @@ export class LifeHarness {
     else await this.update(d => { if (!['ready', 'ended', 'error'].includes(d.world.stage)) d.world.stage = 'paused' })
     await this.drain()
     this.closed = true
+    if (this.rateLimitTimer) { clearTimeout(this.rateLimitTimer); this.rateLimitTimer = null }
   }
 }
