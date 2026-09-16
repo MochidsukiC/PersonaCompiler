@@ -1,0 +1,52 @@
+<!doctype html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+  <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans:wght@400;500;600;700&family=IBM+Plex+Mono:wght@400;500&family=Newsreader:ital,wght@0,400;1,400;1,500&display=swap">
+  <style>
+    body { margin: 0; font-family: "IBM Plex Sans", "Segoe UI", sans-serif; }
+    a { color: #d9ab75; } a:hover { color: #e8c48f; }
+  </style>
+</helmet>
+<div style="width: 1280px; height: 720px; background: #111716; color: #d5dcd6; position: relative; overflow: hidden; display: flex; flex-direction: column; padding: 56px 72px; box-sizing: border-box; gap: 32px;">
+  <div style="display: flex; align-items: center; justify-content: space-between;">
+    <div style="font-size: 40px; font-weight: 600; letter-spacing: -0.5px; color: #e3ebdd;">What you get</div>
+    <div style="font-family: 'IBM Plex Mono', Consolas, monospace; font-size: 13px; letter-spacing: 1.5px; color: #788b80;">05 / 05</div>
+  </div>
+
+  <div style="display: grid; grid-template-columns: 440px minmax(0, 1fr); gap: 28px; flex: 1; min-height: 0;">
+    <div style="background: #0c110e; border: 1px solid #27322c; border-radius: 12px; padding: 24px 26px; display: flex; flex-direction: column; gap: 10px; font-family: 'IBM Plex Mono', Consolas, monospace; font-size: 17px; line-height: 1.5; color: #b6c6ad;">
+      <div style="color: #788b80; font-size: 13px; letter-spacing: 1.5px; margin-bottom: 6px;">compilation/&lt;id&gt;/npcs/&lt;resident&gt;/</div>
+      <div>character.json</div>
+      <div>relationships.json</div>
+      <div>memories.json</div>
+      <div>behavior.json</div>
+      <div>schedule.json</div>
+      <div style="color: #e3ebdd;">system_prompt.md</div>
+      <div style="color: #d9ab75;">manifest.json <span style="color: #788b80;">· SHA-256 of every file</span></div>
+      <div style="margin-top: 14px; font-family: 'IBM Plex Sans', 'Segoe UI', sans-serif; font-size: 16px; line-height: 1.5; color: #9fb295;">Engine-neutral JSON plus a runtime prompt. Load it into any game.</div>
+    </div>
+    <div style="background: #151d19; border: 1px solid #27322c; border-radius: 12px; display: flex; flex-direction: column; overflow: hidden;">
+      <div style="flex: 1; min-height: 0; background: #0c110e; display: grid; place-items: center; border-bottom: 1px solid #27322c;">
+        <div style="font-family: 'IBM Plex Mono', Consolas, monospace; font-size: 14px; color: #788b80; text-align: center; line-height: 1.6;">[SCREENSHOT]<br>Review screen: a trait selected, its evidence open</div>
+      </div>
+      <div style="padding: 18px 24px; font-size: 18px; line-height: 1.45; color: #d5dcd6;">Click any trait and it shows the event, memory, or conversation turn that made it true. <span style="color: #bdd6b5;">Auditable. Brand-safe.</span></div>
+    </div>
+  </div>
+
+  <div style="display: flex; align-items: flex-end; justify-content: space-between;">
+    <div style="font-family: 'Newsreader', Georgia, serif; font-style: italic; font-size: 40px; line-height: 1.1; color: #d9ab75;">Histories lived, not written.</div>
+    <div style="display: flex; flex-direction: column; align-items: flex-end; gap: 4px;">
+      <div style="font-family: 'IBM Plex Mono', Consolas, monospace; font-size: 14px; letter-spacing: 1px; color: #9ba99e;">github.com/MochidsukiC/PersonaCompiler</div>
+      <div style="font-size: 16px; color: #788b80;">Team HL</div>
+    </div>
+  </div>
+</div>
+</x-dc>
+</body>
+</html>

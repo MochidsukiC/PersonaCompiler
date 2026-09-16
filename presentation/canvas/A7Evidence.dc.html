@@ -1,0 +1,44 @@
+<!doctype html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+  <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans:wght@400;500;600;700&family=IBM+Plex+Mono:wght@400;500&display=swap">
+  <style>
+    body { margin: 0; font-family: "IBM Plex Sans", "Segoe UI", sans-serif; }
+    a { color: #d9ab75; } a:hover { color: #e8c48f; }
+  </style>
+</helmet>
+<div style="width: 1280px; height: 720px; background: #111716; color: #d5dcd6; overflow: hidden; display: flex; flex-direction: column; padding: 52px 72px; box-sizing: border-box; gap: 32px;">
+  <div style="display: flex; flex-direction: column; gap: 6px;"><div style="font-family: 'IBM Plex Mono', Consolas, monospace; font-size: 13px; letter-spacing: 1.5px; color: #788b80;">APPENDIX · A7</div><div style="font-size: 36px; font-weight: 600; letter-spacing: -0.5px; color: #e3ebdd;">Evidence, and what is not done</div></div>
+
+  <div style="display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 16px;">
+    <div style="background: #151d19; border: 1px solid #27322c; border-radius: 12px; padding: 22px; display: flex; flex-direction: column; gap: 6px;"><div style="font-size: 52px; font-weight: 700; line-height: 1; color: #e3ebdd;">75</div><div style="font-size: 15px; color: #9fb295;">commits in 68 hours</div></div>
+    <div style="background: #151d19; border: 1px solid #27322c; border-radius: 12px; padding: 22px; display: flex; flex-direction: column; gap: 6px;"><div style="font-size: 52px; font-weight: 700; line-height: 1; color: #e3ebdd;">334</div><div style="font-size: 15px; color: #9fb295;">tests: 87 unit + 247 backend, plus Electron E2E</div></div>
+    <div style="background: #151d19; border: 1px solid #27322c; border-radius: 12px; padding: 22px; display: flex; flex-direction: column; gap: 6px;"><div style="font-size: 52px; font-weight: 700; line-height: 1; color: #e3ebdd;">93%</div><div style="font-size: 15px; color: #9fb295;">test code relative to source</div></div>
+    <div style="background: #151d19; border: 1px solid #27322c; border-radius: 12px; padding: 22px; display: flex; flex-direction: column; gap: 6px;"><div style="font-size: 52px; font-weight: 700; line-height: 1; color: #e3ebdd;">34</div><div style="font-size: 15px; color: #9fb295;">typed tools per resident</div></div>
+  </div>
+
+  <div style="display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 16px; flex: 1;">
+    <div style="background: #151d19; border: 1px solid #27322c; border-radius: 12px; padding: 24px; display: flex; flex-direction: column; gap: 10px;">
+      <div style="font-size: 20px; font-weight: 600; color: #e3ebdd;">Verified against the real thing</div>
+      <div style="font-size: 15px; line-height: 1.5; color: #9fb295;">A connection suite drives the real Codex App Server and real CLI terminals against a localhost Responses fixture: steer, interrupt, resize, reconnect, dynamic tools, native compaction, 9 threads living one full day.</div>
+      <div style="font-size: 15px; line-height: 1.5; color: #9fb295;">Real-model acceptance runs on 2026-09-12 covered preparation, daily life, sleep, and compaction. The demo video is a real-model plains village played to completion.</div>
+      <div style="font-size: 15px; line-height: 1.5; color: #9fb295;">A persistence test stalls the save worker for ten seconds; every tool keeps answering and logical writes drop by 90%.</div>
+    </div>
+    <div style="background: #1a1f1a; border: 1px solid #3e3424; border-radius: 12px; padding: 24px; display: flex; flex-direction: column; gap: 10px;">
+      <div style="font-size: 20px; font-weight: 600; color: #e8c48f;">Honest limits</div>
+      <div style="font-size: 15px; line-height: 1.5; color: #c8bb90;">Windows only today.</div>
+      <div style="font-size: 15px; line-height: 1.5; color: #c8bb90;">The quest contract is in-process; no external event API yet.</div>
+      <div style="font-size: 15px; line-height: 1.5; color: #c8bb90;">One native crash in the terminal layer is still open, documented with a Win32 debugger we wrote to chase it.</div>
+      <div style="font-size: 15px; line-height: 1.5; color: #c8bb90;">Later features (marriage, companies, construction, world events) are verified against scripted responses, not yet in a dedicated real-model test.</div>
+    </div>
+  </div>
+</div>
+</x-dc>
+</body>
+</html>

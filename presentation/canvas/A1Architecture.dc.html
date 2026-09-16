@@ -1,0 +1,56 @@
+<!doctype html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+  <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans:wght@400;500;600;700&family=IBM+Plex+Mono:wght@400;500&display=swap">
+  <style>
+    body { margin: 0; font-family: "IBM Plex Sans", "Segoe UI", sans-serif; }
+    a { color: #d9ab75; } a:hover { color: #e8c48f; }
+  </style>
+</helmet>
+<div style="width: 1280px; height: 720px; background: #111716; color: #d5dcd6; overflow: hidden; display: flex; flex-direction: column; padding: 52px 72px; box-sizing: border-box; gap: 32px;">
+  <div style="display: flex; align-items: center; justify-content: space-between;">
+    <div style="display: flex; flex-direction: column; gap: 6px;"><div style="font-family: 'IBM Plex Mono', Consolas, monospace; font-size: 13px; letter-spacing: 1.5px; color: #788b80;">APPENDIX · A1</div><div style="font-size: 36px; font-weight: 600; letter-spacing: -0.5px; color: #e3ebdd;">Architecture</div></div>
+  </div>
+
+  <div style="display: grid; grid-template-columns: minmax(0, 1.2fr) 56px minmax(0, 1fr) 56px minmax(0, 1fr); gap: 0; align-items: stretch; flex: 1;">
+    <div style="background: #151d19; border: 1px solid #27322c; border-radius: 12px; padding: 24px; display: flex; flex-direction: column; gap: 14px;">
+      <div style="font-size: 22px; font-weight: 600; color: #e3ebdd;">Electron app (Windows)</div>
+      <div style="display: flex; flex-direction: column; gap: 10px; font-size: 15px; line-height: 1.45; color: #9fb295;">
+        <div><span style="font-family: 'IBM Plex Mono', Consolas, monospace; color: #bdd6b5;">src/core</span> — schemas, validators, life state machine, spatial rules. No Electron dependency.</div>
+        <div><span style="font-family: 'IBM Plex Mono', Consolas, monospace; color: #bdd6b5;">src/backend</span> — App Server RPC, real CLI terminals, recovery, memory matcher.</div>
+        <div><span style="font-family: 'IBM Plex Mono', Consolas, monospace; color: #bdd6b5;">src/main</span> — disk, file watching, save worker thread.</div>
+        <div><span style="font-family: 'IBM Plex Mono', Consolas, monospace; color: #bdd6b5;">src/renderer</span> — React, Three.js facility view, xterm, relationship graph, review screen.</div>
+      </div>
+    </div>
+    <div style="display: grid; place-items: center;"><svg width="40" height="24" viewBox="0 0 40 24" fill="none" stroke="#788b80" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M2 12h34"></path><path d="m30 6 6 6-6 6"></path><path d="m10 6-6 6 6 6"></path></svg></div>
+    <div style="background: #1a2a1f; border: 1px solid #42563e; border-radius: 12px; padding: 24px; display: flex; flex-direction: column; gap: 14px;">
+      <div style="font-size: 22px; font-weight: 600; color: #e3ebdd;">Codex App Server</div>
+      <div style="display: flex; flex-direction: column; gap: 10px; font-size: 15px; line-height: 1.45; color: #bdd6b5;">
+        <div>One persistent thread per resident, per facility, and one parent.</div>
+        <div>Residents: typed dynamic tools only, no shell.</div>
+        <div>Parent: Codex file tools, workspace-write, automatic approval review.</div>
+        <div>Native compaction, steer, fork, ephemeral recall threads.</div>
+      </div>
+    </div>
+    <div style="display: grid; place-items: center;"><svg width="40" height="24" viewBox="0 0 40 24" fill="none" stroke="#788b80" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M2 12h34"></path><path d="m30 6 6 6-6 6"></path><path d="m10 6-6 6 6 6"></path></svg></div>
+    <div style="background: #151d19; border: 1px solid #27322c; border-radius: 12px; padding: 24px; display: flex; flex-direction: column; gap: 14px;">
+      <div style="font-size: 22px; font-weight: 600; color: #e3ebdd;">Real Codex CLI</div>
+      <div style="display: flex; flex-direction: column; gap: 10px; font-size: 15px; line-height: 1.45; color: #9fb295;">
+        <div>A real terminal attaches to any resident's thread.</div>
+        <div>Goes through an authenticated localhost relay that keeps the resident's tools, model, and effort.</div>
+        <div>Type mid-turn to steer; close the tab, the resident keeps living.</div>
+      </div>
+    </div>
+  </div>
+
+  <div style="font-size: 15px; line-height: 1.5; color: #788b80;">World state lives in memory; the save worker writes history segments and alternating snapshots, manifest last. After a crash the app reconciles against the Codex threads and reopens read-only.</div>
+</div>
+</x-dc>
+</body>
+</html>

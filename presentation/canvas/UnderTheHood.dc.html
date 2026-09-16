@@ -1,0 +1,60 @@
+<!doctype html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+  <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans:wght@400;500;600;700&family=IBM+Plex+Mono:wght@400;500&family=Newsreader:ital,wght@0,400;1,400;1,500&display=swap">
+  <style>
+    body { margin: 0; font-family: "IBM Plex Sans", "Segoe UI", sans-serif; }
+    a { color: #d9ab75; } a:hover { color: #e8c48f; }
+  </style>
+</helmet>
+<div style="width: 1280px; height: 720px; background: #111716; color: #d5dcd6; position: relative; overflow: hidden; display: flex; flex-direction: column; padding: 56px 72px; box-sizing: border-box; gap: 36px;">
+  <div style="display: flex; align-items: flex-end; justify-content: space-between; gap: 40px;">
+    <div style="display: flex; flex-direction: column; gap: 10px;">
+      <div style="font-family: 'IBM Plex Mono', Consolas, monospace; font-size: 13px; letter-spacing: 1.5px; color: #788b80;">UNDER THE HOOD</div>
+      <div style="font-family: 'Newsreader', Georgia, serif; font-style: italic; font-size: 44px; line-height: 1.15; color: #e3ebdd; text-wrap: pretty;">Codex is not our chat backend. It is the body every character lives in.</div>
+    </div>
+    <div style="font-family: 'IBM Plex Mono', Consolas, monospace; font-size: 13px; letter-spacing: 1.5px; color: #788b80; white-space: nowrap;">04 / 05</div>
+  </div>
+
+  <div style="display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 20px; flex: 1;">
+    <div style="background: #151d19; border: 1px solid #27322c; border-radius: 12px; padding: 26px 28px; display: flex; gap: 20px; align-items: flex-start;">
+      <div style="width: 48px; height: 48px; flex-shrink: 0; display: grid; place-items: center; background: #283629; border: 1px solid #42563e; border-radius: 10px;"><svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="#d5e7c9" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M4 6c4 0 4 12 8 12s4-12 8-12"></path><circle cx="4" cy="6" r="1.5"></circle><circle cx="20" cy="6" r="1.5"></circle></svg></div>
+      <div style="display: flex; flex-direction: column; gap: 8px;">
+        <div style="font-size: 24px; font-weight: 600; line-height: 1.2; color: #e3ebdd;">1 resident = 1 persistent Codex thread</div>
+        <div style="font-size: 16px; line-height: 1.5; color: #9fb295;">Birth conditions are injected with zero inference. The parent picks the model, writes down why, and pins it for life.</div>
+      </div>
+    </div>
+    <div style="background: #151d19; border: 1px solid #27322c; border-radius: 12px; padding: 26px 28px; display: flex; gap: 20px; align-items: flex-start;">
+      <div style="width: 48px; height: 48px; flex-shrink: 0; display: grid; place-items: center; background: #283629; border: 1px solid #42563e; border-radius: 10px;"><svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="#d5e7c9" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="m14 7 3-3 3 3-3 3"></path><path d="M17 4 6 15"></path><path d="m4 20 3-1-2-2-1 3Z"></path><path d="M9 12l3 3"></path></svg></div>
+      <div style="display: flex; flex-direction: column; gap: 8px;">
+        <div style="font-size: 24px; font-weight: 600; line-height: 1.2; color: #e3ebdd;">34 typed tools. No shell.</div>
+        <div style="font-size: 16px; line-height: 1.5; color: #9fb295;">walk · speak · remember · marry · build · hire · sleep. The parent is a real coding agent; residents only get their life.</div>
+      </div>
+    </div>
+    <div style="background: #151d19; border: 1px solid #27322c; border-radius: 12px; padding: 26px 28px; display: flex; gap: 20px; align-items: flex-start;">
+      <div style="width: 48px; height: 48px; flex-shrink: 0; display: grid; place-items: center; background: #283629; border: 1px solid #42563e; border-radius: 10px;"><svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="#d5e7c9" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M20 14.5A8 8 0 0 1 9.5 4a8 8 0 1 0 10.5 10.5Z"></path></svg></div>
+      <div style="display: flex; flex-direction: column; gap: 8px;">
+        <div style="font-size: 24px; font-weight: 600; line-height: 1.2; color: #e3ebdd;">Sleep = native compaction</div>
+        <div style="font-size: 16px; line-height: 1.5; color: #9fb295;">The resident consolidates its memory, then Codex compacts the thread. Morning comes only after the compaction item lands.</div>
+      </div>
+    </div>
+    <div style="background: #151d19; border: 1px solid #27322c; border-radius: 12px; padding: 26px 28px; display: flex; gap: 20px; align-items: flex-start;">
+      <div style="width: 48px; height: 48px; flex-shrink: 0; display: grid; place-items: center; background: #283629; border: 1px solid #42563e; border-radius: 10px;"><svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="#d5e7c9" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><circle cx="6" cy="5" r="2"></circle><circle cx="6" cy="19" r="2"></circle><circle cx="18" cy="9" r="2"></circle><path d="M6 7v10"></path><path d="M6 12c0-3 4-3 6-3h4"></path></svg></div>
+      <div style="display: flex; flex-direction: column; gap: 8px;">
+        <div style="font-size: 24px; font-weight: 600; line-height: 1.2; color: #e3ebdd;">Steer mid-thought. Fork a whole society.</div>
+        <div style="font-size: 16px; line-height: 1.5; color: #9fb295;">Words reach a resident through turn/steer. DEV mode forks every thread to A/B prompts under identical conditions.</div>
+      </div>
+    </div>
+  </div>
+
+  <div style="font-family: 'IBM Plex Mono', Consolas, monospace; font-size: 14px; letter-spacing: 0.5px; color: #d9ab75;">thread/inject_items · turn/steer · thread/compact/start · outputSchema · thread/read · thread/fork</div>
+</div>
+</x-dc>
+</body>
+</html>

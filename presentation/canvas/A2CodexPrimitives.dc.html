@@ -1,0 +1,61 @@
+<!doctype html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+  <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans:wght@400;500;600;700&family=IBM+Plex+Mono:wght@400;500&display=swap">
+  <style>
+    body { margin: 0; font-family: "IBM Plex Sans", "Segoe UI", sans-serif; }
+    a { color: #d9ab75; } a:hover { color: #e8c48f; }
+  </style>
+</helmet>
+<div style="width: 1280px; height: 720px; background: #111716; color: #d5dcd6; overflow: hidden; display: flex; flex-direction: column; padding: 52px 72px; box-sizing: border-box; gap: 28px;">
+  <div style="display: flex; flex-direction: column; gap: 6px;"><div style="font-family: 'IBM Plex Mono', Consolas, monospace; font-size: 13px; letter-spacing: 1.5px; color: #788b80;">APPENDIX · A2</div><div style="font-size: 36px; font-weight: 600; letter-spacing: -0.5px; color: #e3ebdd;">Every stage of a life maps to an App Server primitive</div></div>
+
+  <div style="display: grid; grid-template-columns: 150px 380px minmax(0, 1fr); gap: 0; border: 1px solid #27322c; border-radius: 12px; overflow: hidden; font-size: 16px; line-height: 1.4;">
+    <div style="padding: 12px 18px; background: #1a2a1f; color: #788b80; font-family: 'IBM Plex Mono', Consolas, monospace; font-size: 12px; letter-spacing: 1.5px;">STAGE</div>
+    <div style="padding: 12px 18px; background: #1a2a1f; color: #788b80; font-family: 'IBM Plex Mono', Consolas, monospace; font-size: 12px; letter-spacing: 1.5px;">PRIMITIVE</div>
+    <div style="padding: 12px 18px; background: #1a2a1f; color: #788b80; font-family: 'IBM Plex Mono', Consolas, monospace; font-size: 12px; letter-spacing: 1.5px;">WHAT IT BUYS US</div>
+
+    <div style="padding: 13px 18px; border-top: 1px solid #27322c; color: #e3ebdd; font-weight: 600;">Birth</div>
+    <div style="padding: 13px 18px; border-top: 1px solid #27322c; font-family: 'IBM Plex Mono', Consolas, monospace; color: #bdd6b5;">thread/inject_items</div>
+    <div style="padding: 13px 18px; border-top: 1px solid #27322c; color: #9fb295;">Initial conditions enter the thread with zero inference.</div>
+
+    <div style="padding: 13px 18px; border-top: 1px solid #27322c; color: #e3ebdd; font-weight: 600;">Model</div>
+    <div style="padding: 13px 18px; border-top: 1px solid #27322c; font-family: 'IBM Plex Mono', Consolas, monospace; color: #bdd6b5;">allowProviderModelFallback: false</div>
+    <div style="padding: 13px 18px; border-top: 1px solid #27322c; color: #9fb295;">Birth model chosen by the parent with a reason; re-verified on every thread/resume.</div>
+
+    <div style="padding: 13px 18px; border-top: 1px solid #27322c; color: #e3ebdd; font-weight: 600;">Speech</div>
+    <div style="padding: 13px 18px; border-top: 1px solid #27322c; font-family: 'IBM Plex Mono', Consolas, monospace; color: #bdd6b5;">turn/steer</div>
+    <div style="padding: 13px 18px; border-top: 1px solid #27322c; color: #9fb295;">Words reach a resident mid-thought; if the turn ended, a new one starts.</div>
+
+    <div style="padding: 13px 18px; border-top: 1px solid #27322c; color: #e3ebdd; font-weight: 600;">Sleep</div>
+    <div style="padding: 13px 18px; border-top: 1px solid #27322c; font-family: 'IBM Plex Mono', Consolas, monospace; color: #bdd6b5;">thread/compact/start</div>
+    <div style="padding: 13px 18px; border-top: 1px solid #27322c; color: #9fb295;">After in-thread memory consolidation; the harness waits for the contextCompaction item.</div>
+
+    <div style="padding: 13px 18px; border-top: 1px solid #27322c; color: #e3ebdd; font-weight: 600;">Recall</div>
+    <div style="padding: 13px 18px; border-top: 1px solid #27322c; font-family: 'IBM Plex Mono', Consolas, monospace; color: #bdd6b5;">ephemeral thread + outputSchema</div>
+    <div style="padding: 13px 18px; border-top: 1px solid #27322c; color: #9fb295;">Semantic matching on the resident's own model, returning memory IDs only.</div>
+
+    <div style="padding: 13px 18px; border-top: 1px solid #27322c; color: #e3ebdd; font-weight: 600;">Recovery</div>
+    <div style="padding: 13px 18px; border-top: 1px solid #27322c; font-family: 'IBM Plex Mono', Consolas, monospace; color: #bdd6b5;">thread/read + clientUserMessageId</div>
+    <div style="padding: 13px 18px; border-top: 1px solid #27322c; color: #9fb295;">The thread is the ledger. Nothing is resent after a crash.</div>
+
+    <div style="padding: 13px 18px; border-top: 1px solid #27322c; color: #e3ebdd; font-weight: 600;">Experiments</div>
+    <div style="padding: 13px 18px; border-top: 1px solid #27322c; font-family: 'IBM Plex Mono', Consolas, monospace; color: #bdd6b5;">thread/fork + lastTurnId</div>
+    <div style="padding: 13px 18px; border-top: 1px solid #27322c; color: #9fb295;">Fork a whole society at a checkpoint; A/B prompts under identical conditions.</div>
+
+    <div style="padding: 13px 18px; border-top: 1px solid #27322c; color: #e3ebdd; font-weight: 600;">Parent</div>
+    <div style="padding: 13px 18px; border-top: 1px solid #27322c; font-family: 'IBM Plex Mono', Consolas, monospace; color: #bdd6b5;">workspace-write + auto_review</div>
+    <div style="padding: 13px 18px; border-top: 1px solid #27322c; color: #9fb295;">A real coding agent writes the artifacts with Codex's own file tools.</div>
+  </div>
+
+  <div style="font-size: 15px; line-height: 1.5; color: #788b80;">Residents run with approvalPolicy never and no shell: 34 typed dynamic tools are the whole world they can touch. All of the above is in <span style="font-family: 'IBM Plex Mono', Consolas, monospace; color: #9fb295;">src/backend/runtime.ts</span>.</div>
+</div>
+</x-dc>
+</body>
+</html>

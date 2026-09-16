@@ -1,0 +1,27 @@
+{
+  "pages": [
+    { "id": "page-1", "name": "Main deck (3 min)" },
+    { "id": "page-2", "name": "Q&A appendix" }
+  ],
+  "artboards": [
+    { "file": "Main.dc.html", "title": "01 Hook", "x": 0, "y": 0, "w": 1280, "h": 720, "page": "page-1" },
+    { "file": "HowItWorks.dc.html", "title": "02 How it works", "x": 1360, "y": 0, "w": 1280, "h": 720, "page": "page-1" },
+    { "file": "Demo.dc.html", "title": "03 Demo", "x": 2720, "y": 0, "w": 1280, "h": 720, "page": "page-1" },
+    { "file": "UnderTheHood.dc.html", "title": "04 Under the hood", "x": 0, "y": 880, "w": 1280, "h": 720, "page": "page-1" },
+    { "file": "WhatYouGet.dc.html", "title": "05 What you get", "x": 1360, "y": 880, "w": 1280, "h": 720, "page": "page-1" },
+
+    { "file": "A1Architecture.dc.html", "title": "A1 Architecture", "x": 0, "y": 0, "w": 1280, "h": 720, "page": "page-2" },
+    { "file": "A2CodexPrimitives.dc.html", "title": "A2 Codex primitives", "x": 1360, "y": 0, "w": 1280, "h": 720, "page": "page-2" },
+    { "file": "A3MemoryModel.dc.html", "title": "A3 Memory model", "x": 2720, "y": 0, "w": 1280, "h": 720, "page": "page-2" },
+    { "file": "A4VsAlternatives.dc.html", "title": "A4 vs alternatives", "x": 4080, "y": 0, "w": 1280, "h": 720, "page": "page-2" },
+    { "file": "A5CostScale.dc.html", "title": "A5 Cost & scale", "x": 0, "y": 880, "w": 1280, "h": 720, "page": "page-2" },
+    { "file": "A6GameIntegration.dc.html", "title": "A6 Game integration", "x": 1360, "y": 880, "w": 1280, "h": 720, "page": "page-2" },
+    { "file": "A7Evidence.dc.html", "title": "A7 Evidence", "x": 2720, "y": 880, "w": 1280, "h": 720, "page": "page-2" },
+    { "file": "A8Roadmap.dc.html", "title": "A8 Roadmap", "x": 4080, "y": 880, "w": 1280, "h": 720, "page": "page-2" }
+  ],
+  "annotations": [
+    { "id": "timing", "x": 2720, "y": 880, "w": 560, "text": "3-minute demo, 2-minute Q&A.\n01 Hook 0:00-0:15 · 02 How it works 0:15-0:35 · 03 Demo 0:35-2:20 (video, narrated live) · 04 Under the hood 2:20-2:45 · 05 What you get 2:45-3:00.\nAppendix slides are for Q&A only.", "page": "page-1" },
+    { "id": "assets", "x": 3320, "y": 880, "w": 560, "text": "To replace:\n- 03 Demo: play the screen recording (about 100 s) from a separate player; this slide is the cue.\n- 05 What you get: drop in a screenshot of the review screen with a trait selected and its evidence open.\nAvoid the Minecraft name and assets in captions and narration; say 'a plains village'.", "page": "page-1" }
+  ],
+  "launch": { "view": "canvas", "page": "page-1" }
+}
